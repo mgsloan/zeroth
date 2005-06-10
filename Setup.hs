@@ -1,11 +1,10 @@
 module Setup where
 
-import System.Console.GetOpt
-import System.Environment
-import System.Exit
-import System.IO
-import System.Directory
-import Data.Maybe
+import System.Console.GetOpt  ( ArgDescr (..), OptDescr (..), usageInfo, getOpt', ArgOrder (..) )
+import System.Environment     ( getProgName )
+import System.Exit            ( exitWith, ExitCode (..) )
+import System.Directory       ( findExecutable )
+import Data.Maybe             ( fromMaybe )
 
 data ConfigFlags
     = ConfigFlags
