@@ -109,6 +109,6 @@ mkTempFlags = updateCfg
             InputFile path  -> t { tempInputFile  = path }
             OutputFile path -> t { tempOutputFile = path }
             WithCpphs path  -> t { tempCpphsPath  = Just path }
-            GHCArgs args    -> t { tempGHCArgs    = words args }
-            CpphsArgs args  -> t { tempCpphsArgs  = words args }
+            GHCArgs args    -> t { tempGHCArgs    = tempGHCArgs t ++ words args }
+            CpphsArgs args  -> t { tempCpphsArgs  = tempCpphsArgs t ++ words args }
             _               -> error $ "Unexpected flag!"
