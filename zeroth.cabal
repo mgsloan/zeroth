@@ -3,6 +3,7 @@ Version: 0.1.0
 License: BSD3
 License-file: LICENSE
 Maintainer: Lemmih <lemmih@gmail.com>
+Build-depends: base, haskell-src-exts
 Copyright: 2005 Lemmih <lemmih@gmail.com>
 
 Executable: zeroth
