@@ -9,3 +9,4 @@ Copyright: 2005 Lemmih <lemmih@gmail.com>
 Executable: zeroth
 Main-is: Main.hs
 GHC-Options: -fglasgow-exts -Wall -Werror
+Hs-Source-Dirs: src

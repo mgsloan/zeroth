@@ -2,7 +2,7 @@ module Zeroth
     ( zeroth
     ) where
 
-import Language.Haskell.Hsx hiding ( comments )
+import Language.Haskell.Exts hiding ( comments )
 import System.Process        ( runInteractiveProcess, waitForProcess )
 import System.IO             ( hPutStr, hClose, hGetContents, openTempFile )
 import System.Directory      ( removeFile, getTemporaryDirectory )
