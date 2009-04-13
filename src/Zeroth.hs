@@ -8,8 +8,8 @@ import System.IO             ( hPutStr, hClose, hGetContents, openTempFile, stdi
 import System.Directory      ( removeFile, getTemporaryDirectory )
 import System.Exit           ( ExitCode (..) )
 import Control.Monad         ( when )
-import Data.List             ( find, isPrefixOf, nub )
-import Data.Maybe            ( isJust, mapMaybe )
+import Data.List             ( find, intersperse, isPrefixOf, nub )
+import Data.Maybe            ( catMaybes, isJust, mapMaybe )
 
 import Comments              ( parseComments, mixComments )
 
@@ -40,11 +40,58 @@ zeroth ghcPath cpphsPath ghcOpts cpphsOpts inputFile
                            -> return (Module loc m opts mWarn exports (postProcessImports im $ snd thData) (filter delTH decls))
                          e -> error (show e)
          when (inputFile == "-") $ removeFile inputFile2
-         return (prettyPrint zerothData ++ "\n" ++ unlines (mixComments (parseComments input) $ fst thData))
+         return . unlines . mixComments (parseComments input) $ numberAndPrettyPrint zerothData ++ fst thData
     where getTH (SpliceDecl l s) = Just (l,s)
           getTH _ = Nothing
           delTH (SpliceDecl _ _) = False
           delTH _ = True
+
+numberAndPrettyPrint :: Module -> [(Int, String)]
+numberAndPrettyPrint (Module mLoc m prags mbWarn exports imp decls)
+    = map nAndPPrag prags
+      ++ (srcLine mLoc, concat $ "module "
+                                 : prettyPrint m
+                                 : catMaybes [ fmap ppWarnText mbWarn
+                                                , fmap (\es -> " (" ++ concat (intersperse ", " $ map prettyPrint es) ++ ")") exports
+                                                ]
+                                   ++ [" where"])
+         : (map (\i -> (srcLine (importLoc i), prettyPrint i)) imp ++ (nAndPDec =<< decls))
+    where nAndPDec d@(TypeDecl loc _ _ _) = [(srcLine loc, prettyPrint d)]
+          nAndPDec d@(DataDecl loc _ _ _ _ _ _) = [(srcLine loc, prettyPrint d)]
+          nAndPDec d@(GDataDecl loc _ _ _ _ _ _ _) = [(srcLine loc, prettyPrint d)]
+          nAndPDec d@(InfixDecl loc _ _ _) = [(srcLine loc, prettyPrint d)]
+          nAndPDec d@(ClassDecl loc _ _ _ _ _) = [(srcLine loc, prettyPrint d)]
+          nAndPDec d@(InstDecl loc _ _ _ _) = [(srcLine loc, prettyPrint d)]
+          nAndPDec d@(DefaultDecl loc _) = [(srcLine loc, prettyPrint d)]
+          nAndPDec d@(SpliceDecl loc _) = [(srcLine loc, prettyPrint d)]
+          nAndPDec d@(TypeSig loc _ _) = [(srcLine loc, prettyPrint d)]
+          nAndPDec (FunBind matches) = map (\match@(Match loc _ _ _ _ _) -> (srcLine loc, prettyPrint match)) matches
+          nAndPDec d@(PatBind loc _ _ _ _) = [(srcLine loc, prettyPrint d)]
+          nAndPDec d@(ForImp loc _ _ _ _ _) = [(srcLine loc, prettyPrint d)]
+          nAndPDec d@(ForExp loc _ _ _ _) = [(srcLine loc, prettyPrint d)]
+          nAndPDec d@(DataFamDecl loc _ _ _ _) = [(srcLine loc, prettyPrint d)]
+          nAndPDec d@(DataInsDecl loc _ _ _ _) = [(srcLine loc, prettyPrint d)]
+          nAndPDec d@(DeprPragmaDecl loc _) = [(srcLine loc, prettyPrint d)]
+          nAndPDec d@(DerivDecl loc _ _ _) = [(srcLine loc, prettyPrint d)]
+          nAndPDec d@(GDataInsDecl loc _ _ _ _ _) = [(srcLine loc, prettyPrint d)]
+          nAndPDec d@(InlineSig loc _ _ _) = [(srcLine loc, prettyPrint d)]
+          nAndPDec d@(InstSig loc _ _ _) = [(srcLine loc, prettyPrint d)]
+          nAndPDec d@(RulePragmaDecl loc _) = [(srcLine loc, prettyPrint d)]
+          nAndPDec d@(SpecInlineSig loc _ _ _ _) = [(srcLine loc, prettyPrint d)]
+          nAndPDec d@(SpecSig loc _ _) = [(srcLine loc, prettyPrint d)]
+          nAndPDec d@(TypeFamDecl loc _ _ _) = [(srcLine loc, prettyPrint d)]
+          nAndPDec d@(TypeInsDecl loc _ _) = [(srcLine loc, prettyPrint d)]
+          nAndPDec d@(UnknownDeclPragma loc _ _) = [(srcLine loc, prettyPrint d)]
+          nAndPDec d@(WarnPragmaDecl loc _) = [(srcLine loc, prettyPrint d)]
+          nAndPPrag p@(LanguagePragma loc _) = (srcLine loc, prettyPrint p)
+          nAndPPrag p@(IncludePragma loc _) = (srcLine loc, prettyPrint p)
+          nAndPPrag p@(CFilesPragma loc _) = (srcLine loc, prettyPrint p)
+          nAndPPrag p@(OptionsPragma loc _ _) = (srcLine loc, prettyPrint p)
+          nAndPPrag p@(UnknownTopPragma loc _ _) = (srcLine loc, prettyPrint p)
+
+ppWarnText :: WarningText -> String
+ppWarnText (DeprText s) = "{-# DEPRECATED" ++ s ++ "#-}"
+ppWarnText (WarnText s) = "{-# WARNING" ++ s ++ "#-}"
 
 -- Removes TH imports, and adds any qualified imports needed by generated TH code
 postProcessImports :: [ImportDecl] -> [String] -> [ImportDecl]
