@@ -21,15 +21,15 @@ zeroth ghcPath cpphsPath ghcOpts cpphsOpts input
     = do thInput     <- preprocessCpphs cpphsPath (["--noline","-DHASTH"]++cpphsOpts) input
          zerothInput <- preprocessCpphs cpphsPath (["--noline"]++cpphsOpts) input
          thData <- case parseModule thInput of
-                     ParseOk m@(HsModule _ _ _ _ decls) -> runTH ghcPath m ghcOpts (mapMaybe getTH decls)
+                     ParseOk m@(Module _ _ _ _ _ _ decls) -> runTH ghcPath m ghcOpts (mapMaybe getTH decls)
                      e -> error (show e)
          zerothData <- case parseModule zerothInput of
-                         ParseOk (HsModule loc m exports im decls) -> return (HsModule loc m exports im (filter delTH decls))
+                         ParseOk (Module loc m opts mWarn exports im decls) -> return (Module loc m opts mWarn exports im (filter delTH decls))
                          e -> error (show e)
          return (prettyPrint zerothData ++ "\n" ++ unlines (mixComments comments thData))
-    where getTH (HsSpliceDecl l s) = Just (l,s)
+    where getTH (SpliceDecl l s) = Just (l,s)
           getTH _ = Nothing
-          delTH (HsSpliceDecl _ _) = False
+          delTH (SpliceDecl _ _) = False
           delTH _ = True
           comments = parseComments input
 
@@ -53,11 +53,11 @@ preprocessCpphs cpphs args input
            ExitSuccess -> return output
 
 runTH :: FilePath -- ^ Path to GHC
-      -> HsModule 
+      -> Module 
       -> [String]
-      -> [(SrcLoc,HsSplice)]
+      -> [(SrcLoc,Splice)]
       -> IO [(Int,String)]
-runTH ghcPath (HsModule _ _ _ imports _) ghcOpts th
+runTH ghcPath (Module _ _ _ _ _ imports _) ghcOpts th
     = do tmpDir <- getTemporaryDirectory
          (tmpInPath,tmpInHandle) <- openTempFile tmpDir "TH.source.zeroth.hs"
          hPutStr tmpInHandle realM
@@ -80,17 +80,17 @@ runTH ghcPath (HsModule _ _ _ imports _) ghcOpts th
                        | otherwise -> case reads output of
                                         [(ret,_)] -> return ret
                                         _         -> error $ "Failed to parse result:\n"++output
-    where thImport = HsImportDecl emptySrcLoc (Module "Language.Haskell.TH") False Nothing Nothing
+    where thImport = ImportDecl emptySrcLoc (ModuleName "Language.Haskell.TH") False False Nothing Nothing
           emptySrcLoc = SrcLoc "" 0 0
           pp :: (Pretty a) => a -> String
           pp = prettyPrintWithMode (defaultMode{layout = PPInLine})
           realM = unlines $ ["module Main ( main ) where"]
                             ++ map pp (thImport:imports)
-                            ++ ["main = do decls <- sequence $ " ++ pp (HsList splices)]
-                            ++ ["          print $ map (\\(l,d) -> (l,pprint d)) (zip "++ pp (HsList lineNums) ++" decls)"]
-          splices = flip map th $ \(_src,splice) -> HsApp (HsVar (UnQual (HsIdent "runQ"))) (HsParen (spliceToExp splice))
-          lineNums = flip map th $ \(loc,_splice) -> HsLit (HsInt (fromIntegral (srcLine loc)))
-          spliceToExp (HsParenSplice e) = e
+                            ++ ["main = do decls <- sequence $ " ++ pp (List splices)]
+                            ++ ["          print $ map (\\(l,d) -> (l,pprint d)) (zip "++ pp (List lineNums) ++" decls)"]
+          splices = flip map th $ \(_src,splice) -> App (Var (UnQual (Ident "runQ"))) (Paren (spliceToExp splice))
+          lineNums = flip map th $ \(loc,_splice) -> Lit (Int (fromIntegral (srcLine loc)))
+          spliceToExp (ParenSplice e) = e
           spliceToExp _ = error "TH: FIXME!"
 
 {-
