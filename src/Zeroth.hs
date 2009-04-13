@@ -49,7 +49,7 @@ zeroth ghcPath cpphsPath ghcOpts cpphsOpts inputFile
 
 numberAndPrettyPrint :: Module -> [(Int, String)]
 numberAndPrettyPrint (Module mLoc m prags mbWarn exports imp decls)
-    = map nAndPPrag prags
+    = (nAndPPrag =<< prags)
       ++ (srcLine mLoc, concat $ "module "
                                  : prettyPrint m
                                  : catMaybes [ fmap ppWarnText mbWarn
@@ -84,11 +84,15 @@ numberAndPrettyPrint (Module mLoc m prags mbWarn exports imp decls)
           nAndPDec d@(TypeInsDecl loc _ _) = [(srcLine loc, prettyPrint d)]
           nAndPDec d@(UnknownDeclPragma loc _ _) = [(srcLine loc, prettyPrint d)]
           nAndPDec d@(WarnPragmaDecl loc _) = [(srcLine loc, prettyPrint d)]
-          nAndPPrag (LanguagePragma loc names) = (srcLine loc, prettyPrint . LanguagePragma loc $ names \\ map Ident unwantedLanguageOptions)
-          nAndPPrag p@(IncludePragma loc _) = (srcLine loc, prettyPrint p)
-          nAndPPrag p@(CFilesPragma loc _) = (srcLine loc, prettyPrint p)
-          nAndPPrag (OptionsPragma loc mt s) = (srcLine loc, prettyPrint . OptionsPragma loc mt $ filterOptions s)
-          nAndPPrag p@(UnknownTopPragma loc _ _) = (srcLine loc, prettyPrint p)
+          nAndPPrag (LanguagePragma loc names)
+              | null filteredNames = []
+              | otherwise          = [(srcLine loc, prettyPrint $ LanguagePragma loc filteredNames)]
+              where
+                  filteredNames = names \\ map Ident unwantedLanguageOptions
+          nAndPPrag p@(IncludePragma loc _) = [(srcLine loc, prettyPrint p)]
+          nAndPPrag p@(CFilesPragma loc _) = [(srcLine loc, prettyPrint p)]
+          nAndPPrag (OptionsPragma loc mt s) = [(srcLine loc, prettyPrint . OptionsPragma loc mt $ filterOptions s)]
+          nAndPPrag p@(UnknownTopPragma loc _ _) = [(srcLine loc, prettyPrint p)]
           filterOptions optStr = foldr (\opt -> replaceAll (" -" ++ opt ++ " ") " ") optStr $ "cpp" : "fth" : map ('X' :) unwantedLanguageOptions
           unwantedLanguageOptions = ["CPP", "TemplateHaskell"]
 
