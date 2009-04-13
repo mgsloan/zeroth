@@ -37,8 +37,8 @@ zeroth ghcPath cpphsPath ghcOpts cpphsOpts inputFile
                      ParseOk m@(Module _ _ _ _ _ _ decls) -> runTH ghcPath m ghcOpts (mapMaybe getTH decls)
                      e -> error (show e)
          zerothData <- case parseModule zerothInput of
-                         ParseOk (Module loc m opts mWarn exports im decls)
-                           -> return (Module loc m opts mWarn exports (postProcessImports im $ snd thData) (filter delTH decls))
+                         ParseOk (Module loc m pragmas mWarn exports im decls)
+                           -> return (Module loc m pragmas mWarn exports (postProcessImports im $ snd thData) (filter delTH decls))
                          e -> error (show e)
          when (inputFile == "-") $ removeFile inputFile2
          return . unlines . mixComments (parseComments input) $ numberAndPrettyPrint zerothData ++ fst thData
