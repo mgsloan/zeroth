@@ -8,7 +8,7 @@ import System.IO             ( hPutStr, hClose, hGetContents, openTempFile, stdi
 import System.Directory      ( removeFile, getTemporaryDirectory )
 import System.Exit           ( ExitCode (..) )
 import Control.Monad         ( when )
-import Data.List             ( (\\), intersperse, isPrefixOf, nub )
+import Data.List             ( (\\), intersperse, isPrefixOf, nub, stripPrefix )
 import Data.Maybe            ( catMaybes, mapMaybe )
 
 import Comments              ( parseComments, mixComments )
@@ -129,12 +129,12 @@ runTH :: FilePath -- ^ Path to GHC
       -> [String]
       -> [(SrcLoc,Splice)]
       -> IO ([(Int,String)], [String])
-runTH ghcPath (Module _ _ _ _ _ imports _) ghcOpts th
+runTH ghcPath (Module _ _ pragmas _ _ imports _) ghcOpts th
     = do tmpDir <- getTemporaryDirectory
          (tmpInPath,tmpInHandle) <- openTempFile tmpDir "TH.source.zeroth.hs"
          hPutStr tmpInHandle realM
          hClose tmpInHandle
-         let args = [tmpInPath,"-e","main","-fth","-fglasgow-exts"]++ghcOpts
+         let args = [tmpInPath,"-fno-code"]++ghcOpts
          --putStrLn $ "Module:\n" ++ realM
          --putStrLn $ "Running: " ++ unwords (ghcPath:args)
          (inH,outH,errH,pid) <- runInteractiveProcess ghcPath args Nothing Nothing
@@ -149,23 +149,36 @@ runTH ghcPath (Module _ _ _ _ _ imports _) ghcOpts th
          case eCode of
            ExitFailure err -> error (unwords (ghcPath:args) ++ ": failure: " ++ show err ++ ":\n" ++ errMsg)
            ExitSuccess | not (null errMsg) -> error (unwords (ghcPath:args) ++ ": failure:\n" ++ errMsg)
-                       | otherwise -> case reads output of
-                                        [(ret,_)] -> return ret
-                                        _         -> error $ "Failed to parse result:\n"++output
+                       | otherwise -> case mapMaybe (stripPrefix idPrefix) $ lines output of
+                                        [h] -> case reads h of
+                                            [(ret,_)] -> return ret
+                                            _         -> error $ "Failed to parse result:\n"++output
+                                        _   -> error $ "Failed to parse result:\n"++output
     where thImport = ImportDecl emptySrcLoc (ModuleName "Language.Haskell.TH") False False Nothing Nothing
           pp :: (Pretty a) => a -> String
           pp = prettyPrintWithMode (defaultMode{layout = PPInLine})
-          realM = unlines $ ["module Main ( main ) where"]
+          realM = unlines $ map (pp . disableWarnings) pragmas
+                            ++ ["module Main ( main ) where"]
                             ++ map pp (thImport:imports)
                             ++ ["import qualified Data.Generics.Schemes"]
                             ++ ["import qualified Data.Maybe"]
-                            ++ ["main = do decls <- sequence $ " ++ pp (List splices)]
-                            ++ ["          print $ ( map (\\(l,d) -> (l,pprint d)) (zip " ++ pp (List lineNums) ++ " decls)"]
-                            ++ ["                  , map (Data.Maybe.fromJust . nameModule) $ Data.Generics.Schemes.listify (Data.Maybe.isJust . nameModule) decls)"]
-          splices = flip map th $ \(_src,splice) -> App (Var (UnQual (Ident "runQ"))) (Paren (spliceToExp splice))
+                            ++ ["import qualified System.IO"]
+                            ++ ["main = undefined"]
+                            ++ ["$( do decls <- sequence " ++ pp (List splices)]
+                            ++ ["      runIO $ do putStrLn $ " ++ show idPrefix ++ " ++ show ( map (\\(l,d) -> (l,pprint d)) (zip "
+                                ++ pp (List lineNums) ++ " decls)"]
+                            ++ ["                         , map (Data.Maybe.fromJust . nameModule) $ Data.Generics.Schemes.listify (Data.Maybe.isJust . nameModule) decls)"]
+                            ++ ["                 System.IO.hFlush System.IO.stdout"]
+                            ++ ["      return []"]
+                            ++ [" )"]
+          splices = flip map th $ \(_src,splice) -> spliceToExp splice
           lineNums = flip map th $ \(loc,_splice) -> Lit (Int (fromIntegral (srcLine loc)))
           spliceToExp (ParenSplice e) = e
           spliceToExp _ = error "TH: FIXME!"
+          idPrefix = "ZEROTH OUTPUT: "
+          disableWarnings (OptionsPragma loc Nothing    s) = OptionsPragma loc Nothing $ s ++ " -w" -- Turn off all warnings (works for GHC)
+          disableWarnings (OptionsPragma loc (Just GHC) s) = OptionsPragma loc (Just GHC) $ s ++ " -w"
+          disableWarnings x = x
 
 emptySrcLoc :: SrcLoc
 emptySrcLoc = SrcLoc "" 0 0
