@@ -147,7 +147,7 @@ runTH ghcPath (Module _ _ _ _ _ imports _) ghcOpts th
          eCode <- waitForProcess pid
          -- removeFile tmpInPath
          case eCode of
-           ExitFailure err -> error (unwords (ghcPath:args) ++ ": failure: " ++ show err)
+           ExitFailure err -> error (unwords (ghcPath:args) ++ ": failure: " ++ show err ++ ":\n" ++ errMsg)
            ExitSuccess | not (null errMsg) -> error (unwords (ghcPath:args) ++ ": failure:\n" ++ errMsg)
                        | otherwise -> case reads output of
                                         [(ret,_)] -> return ret
