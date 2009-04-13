@@ -23,8 +23,9 @@ zeroth :: FilePath -- ^ Path to GHC
        -> [String] -- ^ GHC options
        -> [String] -- ^ cpphs options
        -> String   -- ^ Input filename, or "-" for stdin
+       -> [String] -- ^ Import prefixes to drop
        -> IO String
-zeroth ghcPath cpphsPath ghcOpts cpphsOpts inputFile
+zeroth ghcPath cpphsPath ghcOpts cpphsOpts inputFile dropImports
     = do input       <- readFromFile inputFile
          tmpDir      <- getTemporaryDirectory
          (inputFile2, tmpHandle) <- case inputFile of
@@ -38,7 +39,7 @@ zeroth ghcPath cpphsPath ghcOpts cpphsOpts inputFile
                      e -> error (show e)
          zerothData <- case parseModule zerothInput of
                          ParseOk (Module loc m pragmas mWarn exports im decls)
-                           -> return (Module loc m pragmas mWarn exports (postProcessImports im $ snd thData) (filter delTH decls))
+                           -> return (Module loc m pragmas mWarn exports (postProcessImports dropImports im $ snd thData) (filter delTH decls))
                          e -> error (show e)
          when (inputFile == "-") $ removeFile inputFile2
          return . unlines . mixComments (parseComments input) $ numberAndPrettyPrint zerothData ++ fst thData
@@ -101,8 +102,8 @@ ppWarnText (DeprText s) = "{-# DEPRECATED" ++ s ++ "#-}"
 ppWarnText (WarnText s) = "{-# WARNING" ++ s ++ "#-}"
 
 -- Removes TH imports, and adds any qualified imports needed by generated TH code
-postProcessImports :: [ImportDecl] -> [String] -> [ImportDecl]
-postProcessImports oldImports qNames
+postProcessImports :: [String] -> [ImportDecl] -> [String] -> [ImportDecl]
+postProcessImports dropPrefixes oldImports qNames
    = nub $  removeTH
         ++ ( map (\q -> ImportDecl { importLoc = emptySrcLoc
                                    , importModule = ModuleName q
@@ -112,7 +113,7 @@ postProcessImports oldImports qNames
                                    , importSpecs = Nothing })
             $ filter (\q -> not $ contains (maybe False (\(ModuleName m) -> m == q) . importAs) removeTH) qNames )
   where
-    removeTH = filter (not . (\(ModuleName m) -> "Language.Haskell.TH" `isPrefixOf` m) . importModule) oldImports
+    removeTH = filter (not . (\(ModuleName m) -> any (`isPrefixOf` m) dropPrefixes) . importModule) oldImports
 
 preprocessCpphs :: FilePath -- ^ Path to cpphs
                 -> [String]

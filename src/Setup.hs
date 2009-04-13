@@ -14,6 +14,7 @@ data ConfigFlags
     , configCpphsPath  :: FilePath
     , configGHCArgs    :: [String]
     , configCpphsArgs  :: [String]
+    , configDropImport :: [String]
     } deriving Show
 
 getExecutable :: String -> Maybe FilePath -> IO FilePath
@@ -33,7 +34,8 @@ mkConfigFlags tmpFlags
                  , configInputFile  = tempInputFile tmpFlags
                  , configOutputFile = tempOutputFile tmpFlags
                  , configGHCArgs    = tempGHCArgs tmpFlags
-                 , configCpphsArgs  = tempCpphsArgs tmpFlags})
+                 , configCpphsArgs  = tempCpphsArgs tmpFlags
+                 , configDropImport = tempDropImport tmpFlags})
 
 data TempFlags
     = TempFlags
@@ -43,6 +45,7 @@ data TempFlags
     , tempCpphsPath  :: Maybe FilePath
     , tempGHCArgs    :: [String]
     , tempCpphsArgs  :: [String]
+    , tempDropImport :: [String]
     } deriving Show
 
 data Flag
@@ -52,6 +55,7 @@ data Flag
     | WithCpphs FilePath
     | GHCArgs String
     | CpphsArgs String
+    | DropImport String
     | HelpFlag
 
 -- We don't want to use elem, because that imposes Eq a
@@ -68,6 +72,7 @@ emptyTempFlags =
     , tempCpphsPath  = Nothing
     , tempGHCArgs    = []
     , tempCpphsArgs  = []
+    , tempDropImport = ["Language.Haskell.TH"]  -- The only way to override this is to edit this line
     }
 
 
@@ -80,6 +85,7 @@ globalOptions =
     , Option "o" ["output"] (ReqArg OutputFile "PATH") "Output file"
     , Option "" ["ghc-args"] (ReqArg GHCArgs "Arguments") "Arguments to GHC"
     , Option "" ["cpphs-args"] (ReqArg CpphsArgs "Arguments") "Arguments to cpphs"
+    , Option "d" ["drop-import"] (ReqArg DropImport "Prefix") "Any import that starts with this prefix will be removed"
     ]
 
 printHelp :: IO ()
@@ -111,4 +117,5 @@ mkTempFlags = updateCfg
             WithCpphs path  -> t { tempCpphsPath  = Just path }
             GHCArgs args    -> t { tempGHCArgs    = tempGHCArgs t ++ words args }
             CpphsArgs args  -> t { tempCpphsArgs  = tempCpphsArgs t ++ words args }
-            _               -> error $ "Unexpected flag!"
+            DropImport pre  -> t { tempDropImport = tempDropImport t ++ words pre }
+            HelpFlag        -> t
