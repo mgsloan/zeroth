@@ -5,7 +5,7 @@ License-file:  LICENSE
 Maintainer:    Lemmih <lemmih@gmail.com>
 Build-type:    Simple
 Build-depends: base, haskell-src-exts >= 0.4.8, directory, process
-Copyright:     2005-2008 Lemmih <lemmih@gmail.com>
+Copyright:     2005-2008 Lemmih <lemmih@gmail.com>, 2009 Robin Green <greenrd@greenrd.org>
 Category:      Language
 Synopsis:      ZeroTH - remove unnecessary TH depdendencies.
 Description:   TemplateHaskell is fairly useful for generating new
