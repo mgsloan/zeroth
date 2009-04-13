@@ -8,10 +8,11 @@ import System.IO             ( hPutStr, hClose, hGetContents, openTempFile, stdi
 import System.Directory      ( removeFile, getTemporaryDirectory )
 import System.Exit           ( ExitCode (..) )
 import Control.Monad         ( when )
-import Data.List             ( find, intersperse, isPrefixOf, nub )
-import Data.Maybe            ( catMaybes, isJust, mapMaybe )
+import Data.List             ( intersperse, isPrefixOf, nub )
+import Data.Maybe            ( catMaybes, mapMaybe )
 
 import Comments              ( parseComments, mixComments )
+import ListUtils             ( contains, replaceAll )
 
 readFromFile :: FilePath -> IO String
 readFromFile "-"  = hGetContents stdin
@@ -86,8 +87,9 @@ numberAndPrettyPrint (Module mLoc m prags mbWarn exports imp decls)
           nAndPPrag p@(LanguagePragma loc _) = (srcLine loc, prettyPrint p)
           nAndPPrag p@(IncludePragma loc _) = (srcLine loc, prettyPrint p)
           nAndPPrag p@(CFilesPragma loc _) = (srcLine loc, prettyPrint p)
-          nAndPPrag p@(OptionsPragma loc _ _) = (srcLine loc, prettyPrint p)
+          nAndPPrag (OptionsPragma loc mt s) = (srcLine loc, prettyPrint . OptionsPragma loc mt $ filterOptions s)
           nAndPPrag p@(UnknownTopPragma loc _ _) = (srcLine loc, prettyPrint p)
+          filterOptions = replaceAll " -cpp " " " . replaceAll " -fth " " "
 
 ppWarnText :: WarningText -> String
 ppWarnText (DeprText s) = "{-# DEPRECATED" ++ s ++ "#-}"
@@ -106,7 +108,6 @@ postProcessImports oldImports qNames
             $ filter (\q -> not $ contains (maybe False (\(ModuleName m) -> m == q) . importAs) removeTH) qNames )
   where
     removeTH = filter (not . (\(ModuleName m) -> "Language.Haskell.TH" `isPrefixOf` m) . importModule) oldImports
-    contains = (isJust .) . find
 
 preprocessCpphs :: FilePath -- ^ Path to cpphs
                 -> [String]
