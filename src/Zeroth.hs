@@ -8,7 +8,7 @@ import System.IO             ( hPutStr, hClose, hGetContents, openTempFile, stdi
 import System.Directory      ( removeFile, getTemporaryDirectory )
 import System.Exit           ( ExitCode (..) )
 import Control.Monad         ( when )
-import Data.List             ( intersperse, isPrefixOf, nub )
+import Data.List             ( (\\), intersperse, isPrefixOf, nub )
 import Data.Maybe            ( catMaybes, mapMaybe )
 
 import Comments              ( parseComments, mixComments )
@@ -84,12 +84,13 @@ numberAndPrettyPrint (Module mLoc m prags mbWarn exports imp decls)
           nAndPDec d@(TypeInsDecl loc _ _) = [(srcLine loc, prettyPrint d)]
           nAndPDec d@(UnknownDeclPragma loc _ _) = [(srcLine loc, prettyPrint d)]
           nAndPDec d@(WarnPragmaDecl loc _) = [(srcLine loc, prettyPrint d)]
-          nAndPPrag p@(LanguagePragma loc _) = (srcLine loc, prettyPrint p)
+          nAndPPrag (LanguagePragma loc names) = (srcLine loc, prettyPrint . LanguagePragma loc $ names \\ map Ident unwantedLanguageOptions)
           nAndPPrag p@(IncludePragma loc _) = (srcLine loc, prettyPrint p)
           nAndPPrag p@(CFilesPragma loc _) = (srcLine loc, prettyPrint p)
           nAndPPrag (OptionsPragma loc mt s) = (srcLine loc, prettyPrint . OptionsPragma loc mt $ filterOptions s)
           nAndPPrag p@(UnknownTopPragma loc _ _) = (srcLine loc, prettyPrint p)
-          filterOptions = replaceAll " -cpp " " " . replaceAll " -fth " " "
+          filterOptions optStr = foldr (\opt -> replaceAll (" -" ++ opt ++ " ") " ") optStr $ "cpp" : "fth" : map ('X' :) unwantedLanguageOptions
+          unwantedLanguageOptions = ["CPP", "TemplateHaskell"]
 
 ppWarnText :: WarningText -> String
 ppWarnText (DeprText s) = "{-# DEPRECATED" ++ s ++ "#-}"
