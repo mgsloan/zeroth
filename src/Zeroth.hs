@@ -42,7 +42,7 @@ zeroth ghcPath cpphsPath ghcOpts cpphsOpts inputFile dropImports
                            -> return (Module loc m pragmas mWarn exports (postProcessImports dropImports im $ snd thData) (filter delTH decls))
                          e -> error (show e)
          when (inputFile == "-") $ removeFile inputFile2
-         return . unlines . mixComments (parseComments input) $ numberAndPrettyPrint zerothData ++ fst thData
+         return . unlines . mixComments (parseComments input) $ numberAndPrettyPrint zerothData ++ (-1, "") : fst thData
     where getTH (SpliceDecl l s) = Just (l,s)
           getTH _ = Nothing
           delTH (SpliceDecl _ _) = False
