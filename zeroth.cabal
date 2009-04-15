@@ -1,9 +1,9 @@
 Name:          zeroth
 Version:       2008.10.28
-Cabal-Version: >= 1.6
+Cabal-version: >= 1.6
 License:       BSD3
 License-file:  LICENSE
-Maintainer:    Lemmih <lemmih@gmail.com>
+Maintainer:    Robin Green <greenrd@greenrd.org>
 Build-type:    Simple
 Copyright:     2005-2008 Lemmih <lemmih@gmail.com>, 2009 Robin Green <greenrd@greenrd.org>
 Category:      Language
@@ -14,6 +14,7 @@ Description:   TemplateHaskell is fairly useful for generating new
                ZeroTH solves this by scanning a file for top-level TH
                declarations, evaluates them, removes TH imports, and outputs
                the resulting code.
+Bug-reports:   mailto:greenrd@greenrd.org
 Stability:     experimental
 Tested-with:   GHC == 6.10.2
 
