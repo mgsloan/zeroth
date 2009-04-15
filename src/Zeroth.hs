@@ -193,13 +193,15 @@ runTH ghcPath (Module _ _ pragmas _ _ imports _) ghcOpts th
                             ++ ["import qualified Data.Generics.Schemes"]
                             ++ ["import qualified Data.Maybe"]
                             ++ ["import qualified System.IO"]
-                            ++ ["main = undefined"]
-                            ++ ["$( do decls <- sequence " ++ pp (List splices)]
-                            ++ ["      runIO $ do putStrLn $ " ++ show idPrefix ++ " ++ show ( map (\\(l,d) -> (l,pprint d)) (zip "
+                            ++ ["import qualified Prelude"]
+                            ++ ["main = Prelude.undefined"]
+                            ++ ["$( do decls <- Prelude.sequence " ++ pp (List splices)]
+                            ++ ["      runIO $ do Prelude.putStrLn $ " ++ show idPrefix
+                                ++ " ++ Prelude.show ( Prelude.map (\\(l,d) -> (l,pprint d)) (Prelude.zip "
                                 ++ pp (List locations) ++ " decls)"]
-                            ++ ["                         , map (Data.Maybe.fromJust . nameModule) $ Data.Generics.Schemes.listify (Data.Maybe.isJust . nameModule) decls)"]
+                            ++ ["                         , Prelude.map (Data.Maybe.fromJust . nameModule) $ Data.Generics.Schemes.listify (Data.Maybe.isJust . nameModule) decls)"]
                             ++ ["                 System.IO.hFlush System.IO.stdout"]
-                            ++ ["      return []"]
+                            ++ ["      Prelude.return []"]
                             ++ [" )"]
           splices = flip map th $ \(_src,splice) -> spliceToExp splice
           locations = flip map th $ \(loc,_splice) -> Tuple [ Lit (Int (fromIntegral (srcLine loc)))
