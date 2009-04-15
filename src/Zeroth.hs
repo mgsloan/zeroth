@@ -12,7 +12,7 @@ import Data.List             ( (\\), intersperse, isPrefixOf, nub, stripPrefix )
 import Data.Maybe            ( catMaybes, mapMaybe )
 
 import Comments              ( parseComments, mixComments )
-import ListUtils             ( contains, replaceAll )
+import ListUtils             ( replaceAll )
 
 readFromFile :: FilePath -> IO String
 readFromFile "-"  = hGetContents stdin
@@ -111,7 +111,7 @@ postProcessImports dropPrefixes oldImports qNames
                                    , importSrc = False
                                    , importAs = Nothing
                                    , importSpecs = Nothing })
-            $ filter (\q -> not $ contains (maybe False (\(ModuleName m) -> m == q) . importAs) removeTH) qNames )
+            $ filter (\q -> not $ any (maybe False (\(ModuleName m) -> m == q) . importAs) removeTH) qNames )
   where
     removeTH = filter (not . (\(ModuleName m) -> any (`isPrefixOf` m) dropPrefixes) . importModule) oldImports
 

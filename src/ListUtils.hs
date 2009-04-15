@@ -1,11 +1,6 @@
 module ListUtils where
 
-import Data.List  ( find, intercalate, isPrefixOf, unfoldr )
-import Data.Maybe ( isJust )
-
--- | Returns whether there exists an element in the list satisfying the given predicate 
-contains :: (a -> Bool) -> [a] -> Bool
-contains = (isJust .) . find
+import Data.List  ( intercalate, isPrefixOf, unfoldr )
 
 -- | Replace a substring with a replacement string throughout a list
 replaceAll :: Eq a => [a] -> [a] -> [a] -> [a]
