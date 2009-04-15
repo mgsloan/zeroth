@@ -11,7 +11,7 @@ import Control.Monad         ( when )
 import Data.List             ( (\\), intersperse, isPrefixOf, nub, stripPrefix )
 import Data.Maybe            ( catMaybes, mapMaybe )
 
-import Comments              ( parseComments, mixComments )
+import Comments              ( Location, parseComments, mixComments )
 import ListUtils             ( replaceAll )
 
 readFromFile :: FilePath -> IO String
@@ -27,8 +27,6 @@ zeroth :: FilePath -- ^ Path to GHC
        -> IO String
 zeroth ghcPath cpphsPath ghcOpts cpphsOpts inputFile dropImports
     = fmap prettyPrintAll $ zerothInternal ghcPath cpphsPath ghcOpts cpphsOpts inputFile dropImports
-
-type Location = Int
 
 data ZeroTHOutput
     = ZeroTHOutput { originalSource :: String
@@ -70,54 +68,57 @@ zerothInternal ghcPath cpphsPath ghcOpts cpphsOpts inputFile dropImports
           delTH _ = True
 
 prettyPrintAll :: ZeroTHOutput -> String
-prettyPrintAll out = unlines . mixComments (parseComments $ originalSource out) $ numberAndPrettyPrint (minusTH out) ++ (-1, "") : thOutput out
+prettyPrintAll out = unlines . mixComments (parseComments $ originalSource out) $ numberAndPrettyPrint (minusTH out) ++ ((-1, 1), "") : thOutput out
+
+location :: SrcLoc -> Location
+location sLoc = (srcLine sLoc, srcColumn sLoc)
 
 numberAndPrettyPrint :: Module -> [(Location, String)]
 numberAndPrettyPrint (Module mLoc m prags mbWarn exports imp decls)
     = (nAndPPrag =<< prags)
-      ++ (srcLine mLoc, concat $ "module "
+      ++ (location mLoc, concat $ "module "
                                  : prettyPrint m
                                  : catMaybes [ fmap ppWarnText mbWarn
                                                 , fmap (\es -> " (" ++ concat (intersperse ", " $ map prettyPrint es) ++ ")") exports
                                                 ]
                                    ++ [" where"])
-         : (map (\i -> (srcLine (importLoc i), prettyPrint i)) imp ++ (nAndPDec =<< decls))
-    where nAndPDec d@(TypeDecl loc _ _ _) = [(srcLine loc, prettyPrint d)]
-          nAndPDec d@(DataDecl loc _ _ _ _ _ _) = [(srcLine loc, prettyPrint d)]
-          nAndPDec d@(GDataDecl loc _ _ _ _ _ _ _) = [(srcLine loc, prettyPrint d)]
-          nAndPDec d@(InfixDecl loc _ _ _) = [(srcLine loc, prettyPrint d)]
-          nAndPDec d@(ClassDecl loc _ _ _ _ _) = [(srcLine loc, prettyPrint d)]
-          nAndPDec d@(InstDecl loc _ _ _ _) = [(srcLine loc, prettyPrint d)]
-          nAndPDec d@(DefaultDecl loc _) = [(srcLine loc, prettyPrint d)]
-          nAndPDec d@(SpliceDecl loc _) = [(srcLine loc, prettyPrint d)]
-          nAndPDec d@(TypeSig loc _ _) = [(srcLine loc, prettyPrint d)]
-          nAndPDec (FunBind matches) = map (\match@(Match loc _ _ _ _ _) -> (srcLine loc, prettyPrint match)) matches
-          nAndPDec d@(PatBind loc _ _ _ _) = [(srcLine loc, prettyPrint d)]
-          nAndPDec d@(ForImp loc _ _ _ _ _) = [(srcLine loc, prettyPrint d)]
-          nAndPDec d@(ForExp loc _ _ _ _) = [(srcLine loc, prettyPrint d)]
-          nAndPDec d@(DataFamDecl loc _ _ _ _) = [(srcLine loc, prettyPrint d)]
-          nAndPDec d@(DataInsDecl loc _ _ _ _) = [(srcLine loc, prettyPrint d)]
-          nAndPDec d@(DeprPragmaDecl loc _) = [(srcLine loc, prettyPrint d)]
-          nAndPDec d@(DerivDecl loc _ _ _) = [(srcLine loc, prettyPrint d)]
-          nAndPDec d@(GDataInsDecl loc _ _ _ _ _) = [(srcLine loc, prettyPrint d)]
-          nAndPDec d@(InlineSig loc _ _ _) = [(srcLine loc, prettyPrint d)]
-          nAndPDec d@(InstSig loc _ _ _) = [(srcLine loc, prettyPrint d)]
-          nAndPDec d@(RulePragmaDecl loc _) = [(srcLine loc, prettyPrint d)]
-          nAndPDec d@(SpecInlineSig loc _ _ _ _) = [(srcLine loc, prettyPrint d)]
-          nAndPDec d@(SpecSig loc _ _) = [(srcLine loc, prettyPrint d)]
-          nAndPDec d@(TypeFamDecl loc _ _ _) = [(srcLine loc, prettyPrint d)]
-          nAndPDec d@(TypeInsDecl loc _ _) = [(srcLine loc, prettyPrint d)]
-          nAndPDec d@(UnknownDeclPragma loc _ _) = [(srcLine loc, prettyPrint d)]
-          nAndPDec d@(WarnPragmaDecl loc _) = [(srcLine loc, prettyPrint d)]
+         : (map (\i -> (location (importLoc i), prettyPrint i)) imp ++ (nAndPDec =<< decls))
+    where nAndPDec d@(TypeDecl loc _ _ _) = [(location loc, prettyPrint d)]
+          nAndPDec d@(DataDecl loc _ _ _ _ _ _) = [(location loc, prettyPrint d)]
+          nAndPDec d@(GDataDecl loc _ _ _ _ _ _ _) = [(location loc, prettyPrint d)]
+          nAndPDec d@(InfixDecl loc _ _ _) = [(location loc, prettyPrint d)]
+          nAndPDec d@(ClassDecl loc _ _ _ _ _) = [(location loc, prettyPrint d)]
+          nAndPDec d@(InstDecl loc _ _ _ _) = [(location loc, prettyPrint d)]
+          nAndPDec d@(DefaultDecl loc _) = [(location loc, prettyPrint d)]
+          nAndPDec d@(SpliceDecl loc _) = [(location loc, prettyPrint d)]
+          nAndPDec d@(TypeSig loc _ _) = [(location loc, prettyPrint d)]
+          nAndPDec (FunBind matches) = map (\match@(Match loc _ _ _ _ _) -> (location loc, prettyPrint match)) matches
+          nAndPDec d@(PatBind loc _ _ _ _) = [(location loc, prettyPrint d)]
+          nAndPDec d@(ForImp loc _ _ _ _ _) = [(location loc, prettyPrint d)]
+          nAndPDec d@(ForExp loc _ _ _ _) = [(location loc, prettyPrint d)]
+          nAndPDec d@(DataFamDecl loc _ _ _ _) = [(location loc, prettyPrint d)]
+          nAndPDec d@(DataInsDecl loc _ _ _ _) = [(location loc, prettyPrint d)]
+          nAndPDec d@(DeprPragmaDecl loc _) = [(location loc, prettyPrint d)]
+          nAndPDec d@(DerivDecl loc _ _ _) = [(location loc, prettyPrint d)]
+          nAndPDec d@(GDataInsDecl loc _ _ _ _ _) = [(location loc, prettyPrint d)]
+          nAndPDec d@(InlineSig loc _ _ _) = [(location loc, prettyPrint d)]
+          nAndPDec d@(InstSig loc _ _ _) = [(location loc, prettyPrint d)]
+          nAndPDec d@(RulePragmaDecl loc _) = [(location loc, prettyPrint d)]
+          nAndPDec d@(SpecInlineSig loc _ _ _ _) = [(location loc, prettyPrint d)]
+          nAndPDec d@(SpecSig loc _ _) = [(location loc, prettyPrint d)]
+          nAndPDec d@(TypeFamDecl loc _ _ _) = [(location loc, prettyPrint d)]
+          nAndPDec d@(TypeInsDecl loc _ _) = [(location loc, prettyPrint d)]
+          nAndPDec d@(UnknownDeclPragma loc _ _) = [(location loc, prettyPrint d)]
+          nAndPDec d@(WarnPragmaDecl loc _) = [(location loc, prettyPrint d)]
           nAndPPrag (LanguagePragma loc names)
               | null filteredNames = []
-              | otherwise          = [(srcLine loc, prettyPrint $ LanguagePragma loc filteredNames)]
+              | otherwise          = [(location loc, prettyPrint $ LanguagePragma loc filteredNames)]
               where
                   filteredNames = names \\ map Ident unwantedLanguageOptions
-          nAndPPrag p@(IncludePragma loc _) = [(srcLine loc, prettyPrint p)]
-          nAndPPrag p@(CFilesPragma loc _) = [(srcLine loc, prettyPrint p)]
-          nAndPPrag (OptionsPragma loc mt s) = [(srcLine loc, prettyPrint . OptionsPragma loc mt $ filterOptions s)]
-          nAndPPrag p@(UnknownTopPragma loc _ _) = [(srcLine loc, prettyPrint p)]
+          nAndPPrag p@(IncludePragma loc _) = [(location loc, prettyPrint p)]
+          nAndPPrag p@(CFilesPragma loc _) = [(location loc, prettyPrint p)]
+          nAndPPrag (OptionsPragma loc mt s) = [(location loc, prettyPrint . OptionsPragma loc mt $ filterOptions s)]
+          nAndPPrag p@(UnknownTopPragma loc _ _) = [(location loc, prettyPrint p)]
           filterOptions optStr = foldr (\opt -> replaceAll (" -" ++ opt ++ " ") " ") optStr $ "cpp" : "fth" : map ('X' :) unwantedLanguageOptions
           unwantedLanguageOptions = ["CPP", "TemplateHaskell"]
 
@@ -195,13 +196,15 @@ runTH ghcPath (Module _ _ pragmas _ _ imports _) ghcOpts th
                             ++ ["main = undefined"]
                             ++ ["$( do decls <- sequence " ++ pp (List splices)]
                             ++ ["      runIO $ do putStrLn $ " ++ show idPrefix ++ " ++ show ( map (\\(l,d) -> (l,pprint d)) (zip "
-                                ++ pp (List lineNums) ++ " decls)"]
+                                ++ pp (List locations) ++ " decls)"]
                             ++ ["                         , map (Data.Maybe.fromJust . nameModule) $ Data.Generics.Schemes.listify (Data.Maybe.isJust . nameModule) decls)"]
                             ++ ["                 System.IO.hFlush System.IO.stdout"]
                             ++ ["      return []"]
                             ++ [" )"]
           splices = flip map th $ \(_src,splice) -> spliceToExp splice
-          lineNums = flip map th $ \(loc,_splice) -> Lit (Int (fromIntegral (srcLine loc)))
+          locations = flip map th $ \(loc,_splice) -> Tuple [ Lit (Int (fromIntegral (srcLine loc)))
+                                                            , Lit (Int (fromIntegral (srcColumn loc)))
+                                                            ]
           spliceToExp (ParenSplice e) = e
           spliceToExp _ = error "TH: FIXME!"
           idPrefix = "ZEROTH OUTPUT: "
