@@ -1,5 +1,5 @@
 module Zeroth
-    ( zeroth
+    ( prettyPrintAll, zeroth, zerothInternal
     ) where
 
 import Language.Haskell.Exts hiding ( comments )
@@ -26,6 +26,24 @@ zeroth :: FilePath -- ^ Path to GHC
        -> [String] -- ^ Import prefixes to drop
        -> IO String
 zeroth ghcPath cpphsPath ghcOpts cpphsOpts inputFile dropImports
+    = fmap prettyPrintAll $ zerothInternal ghcPath cpphsPath ghcOpts cpphsOpts inputFile dropImports
+
+type Location = Int
+
+data ZeroTHOutput
+    = ZeroTHOutput { originalSource :: String
+                   , minusTH :: Module
+                   , thOutput :: [(Location, String)]
+                   }
+
+zerothInternal :: FilePath -- ^ Path to GHC
+               -> FilePath -- ^ Path to cpphs
+               -> [String] -- ^ GHC options
+               -> [String] -- ^ cpphs options
+               -> String   -- ^ Input filename, or "-" for stdin
+               -> [String] -- ^ Import prefixes to drop
+               -> IO ZeroTHOutput
+zerothInternal ghcPath cpphsPath ghcOpts cpphsOpts inputFile dropImports
     = do input       <- readFromFile inputFile
          tmpDir      <- getTemporaryDirectory
          (inputFile2, tmpHandle) <- case inputFile of
@@ -42,13 +60,19 @@ zeroth ghcPath cpphsPath ghcOpts cpphsOpts inputFile dropImports
                            -> return (Module loc m pragmas mWarn exports (postProcessImports dropImports im $ snd thData) (filter delTH decls))
                          e -> error (show e)
          when (inputFile == "-") $ removeFile inputFile2
-         return . unlines . mixComments (parseComments input) $ numberAndPrettyPrint zerothData ++ (-1, "") : fst thData
+         return $ ZeroTHOutput { originalSource = input
+                               , minusTH = zerothData
+                               , thOutput = fst thData
+                               }
     where getTH (SpliceDecl l s) = Just (l,s)
           getTH _ = Nothing
           delTH (SpliceDecl _ _) = False
           delTH _ = True
 
-numberAndPrettyPrint :: Module -> [(Int, String)]
+prettyPrintAll :: ZeroTHOutput -> String
+prettyPrintAll out = unlines . mixComments (parseComments $ originalSource out) $ numberAndPrettyPrint (minusTH out) ++ (-1, "") : thOutput out
+
+numberAndPrettyPrint :: Module -> [(Location, String)]
 numberAndPrettyPrint (Module mLoc m prags mbWarn exports imp decls)
     = (nAndPPrag =<< prags)
       ++ (srcLine mLoc, concat $ "module "
@@ -133,7 +157,7 @@ runTH :: FilePath -- ^ Path to GHC
       -> Module 
       -> [String]
       -> [(SrcLoc,Splice)]
-      -> IO ([(Int,String)], [String])
+      -> IO ([(Location,String)], [String])
 runTH ghcPath (Module _ _ pragmas _ _ imports _) ghcOpts th
     = do tmpDir <- getTemporaryDirectory
          (tmpInPath,tmpInHandle) <- openTempFile tmpDir "TH.source.zeroth.hs"

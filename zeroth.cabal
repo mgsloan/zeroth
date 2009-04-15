@@ -1,22 +1,35 @@
 Name:          zeroth
 Version:       2008.10.28
+Cabal-Version: >= 1.6
 License:       BSD3
 License-file:  LICENSE
 Maintainer:    Lemmih <lemmih@gmail.com>
 Build-type:    Simple
-Build-depends: base, haskell-src-exts >= 0.4.8, directory, process
 Copyright:     2005-2008 Lemmih <lemmih@gmail.com>, 2009 Robin Green <greenrd@greenrd.org>
 Category:      Language
 Synopsis:      ZeroTH - remove unnecessary TH depdendencies.
 Description:   TemplateHaskell is fairly useful for generating new
-               Haskell programs. This, however, incur a dependency on
+               Haskell programs. This, however, incurs a dependency on
                TH on subsequent uses where none theoretically should exist.
                ZeroTH solves this by scanning a file for top-level TH
-               declarations, evaluates them, and then puts the generated
-               code back.
+               declarations, evaluates them, removes TH imports, and outputs
+               the resulting code.
+Stability:     experimental
+Tested-with:   GHC == 6.10.2
 
-Executable:    zeroth
-Main-is:       Main.hs
-Other-modules: Comments, ListUtils, Setup, Zeroth
-GHC-Options:   -Wall
-Hs-Source-Dirs: src
+Source-repository head
+    Type:      darcs
+    Location:  http://patch-tag.com/publicrepos/zerothGreenrd
+
+Library
+    Build-depends:   base, haskell-src-exts >= 0.4.8, directory, process
+    Exposed-modules: Zeroth
+    Other-modules:   Comments, ListUtils
+    GHC-options:     -Wall
+    Hs-source-dirs:  src
+
+Executable zeroth
+    Main-is:        Main.hs
+    Other-modules:  Comments, ListUtils, Setup, Zeroth
+    GHC-options:    -Wall
+    Hs-source-dirs: src
