@@ -19,6 +19,7 @@ main = do args <- getArgs
                            (configCpphsPath configFlags)
                            (configGHCArgs configFlags)
                            (configCpphsArgs configFlags)
+                           (configWholeFile configFlags)
                            (configInputFile configFlags)
                            (configDropImport configFlags)
           writeToFile (configOutputFile configFlags) output

@@ -11,7 +11,7 @@ import System.Exit           ( ExitCode (..) )
 import Control.Applicative   ( (<$>) )
 import Control.Monad         ( guard, when )
 import Data.Generics.Aliases ( mkT )
-import Data.Generics.Schemes ( everywhere )
+import Data.Generics.Schemes ( everywhere, listify )
 import Data.List             ( (\\), intersperse, isInfixOf, isPrefixOf, nub, stripPrefix )
 import Data.Maybe            ( catMaybes, fromMaybe, mapMaybe )
 
@@ -27,11 +27,12 @@ zeroth :: FilePath -- ^ Path to GHC
        -> FilePath -- ^ Path to cpphs
        -> [String] -- ^ GHC options
        -> [String] -- ^ cpphs options
+       -> Bool     -- ^ whether to pass the whole file to GHC
        -> String   -- ^ Input filename, or "-" for stdin
        -> [String] -- ^ Import prefixes to drop
        -> IO String
-zeroth ghcPath cpphsPath ghcOpts cpphsOpts inputFile dropImports
-    = prettyPrintAll <$> zerothInternal ghcPath cpphsPath ghcOpts cpphsOpts inputFile dropImports
+zeroth ghcPath cpphsPath ghcOpts cpphsOpts wholeFile inputFile dropImports
+    = prettyPrintAll <$> zerothInternal ghcPath cpphsPath ghcOpts cpphsOpts wholeFile inputFile dropImports
 
 data ZeroTHOutput
     = ZeroTHOutput { originalSource :: String
@@ -43,10 +44,11 @@ zerothInternal :: FilePath -- ^ Path to GHC
                -> FilePath -- ^ Path to cpphs
                -> [String] -- ^ GHC options
                -> [String] -- ^ cpphs options
+               -> Bool     -- ^ whether to pass the whole file to GHC
                -> String   -- ^ Input filename, or "-" for stdin
                -> [String] -- ^ Import prefixes to drop
                -> IO ZeroTHOutput
-zerothInternal ghcPath cpphsPath ghcOpts cpphsOpts inputFile dropImports
+zerothInternal ghcPath cpphsPath ghcOpts cpphsOpts wholeFile inputFile dropImports
     = do input       <- readFromFile inputFile
          tmpDir      <- getTemporaryDirectory
          (inputFile2, tmpHandle) <- case inputFile of
@@ -60,7 +62,7 @@ zerothInternal ghcPath cpphsPath ghcOpts cpphsOpts inputFile dropImports
          zerothInput <- if shouldRunCpphs then preprocessCpphs cpphsPath (["--noline"]++cpphsOpts) inputFile2
                                           else return input
          (thData, qualImports) <- case parseModule thInput of
-                                     ParseOk m -> unzip <$> runTH ghcPath m ghcOpts
+                                     ParseOk m -> unzip <$> runTH ghcPath ((if wholeFile then id else onlySplices) m) ghcOpts
                                      e -> error $ show e
          let reattach :: [Decl] -> [Decl]
              reattach (SpliceDecl sLoc _ : t) = (parseDecls . fromMaybe err $ lookup (location sLoc) thData) ++ t
@@ -80,6 +82,9 @@ zerothInternal ghcPath cpphsPath ghcOpts cpphsOpts inputFile dropImports
     where parseDecls s = case parseModule $ "module Main where\n" ++ s of
                            ParseOk (Module _ _ _ _ _ _ decls) -> decls
                            e -> error $ show e
+          onlySplices (Module loc m pragmas mWarn exports im decls) = Module loc m pragmas mWarn exports im $ listify isSplice decls
+          isSplice s@(SpliceDecl _ _) = True
+          isSplice _ = False
 
 prettyPrintAll :: ZeroTHOutput -> String
 prettyPrintAll out = unlines . mixComments (parseComments $ originalSource out) . numberAndPrettyPrint $ combinedOutput out

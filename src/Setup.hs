@@ -15,14 +15,13 @@ data ConfigFlags
     , configGHCArgs    :: [String]
     , configCpphsArgs  :: [String]
     , configDropImport :: [String]
+    , configWholeFile  :: Bool
     } deriving Show
 
 getExecutable :: String -> Maybe FilePath -> IO FilePath
 getExecutable _ (Just path) = return path
 getExecutable name Nothing  = fmap (fromMaybe (error errMsg)) (findExecutable name)
     where errMsg = "Couldn't find: "++name
-                              
-                                         
 
 mkConfigFlags :: TempFlags -> IO ConfigFlags
 mkConfigFlags tmpFlags
@@ -35,7 +34,8 @@ mkConfigFlags tmpFlags
                  , configOutputFile = tempOutputFile tmpFlags
                  , configGHCArgs    = tempGHCArgs tmpFlags
                  , configCpphsArgs  = tempCpphsArgs tmpFlags
-                 , configDropImport = tempDropImport tmpFlags})
+                 , configDropImport = tempDropImport tmpFlags
+                 , configWholeFile  = tempWholeFile tmpFlags})
 
 data TempFlags
     = TempFlags
@@ -46,6 +46,7 @@ data TempFlags
     , tempGHCArgs    :: [String]
     , tempCpphsArgs  :: [String]
     , tempDropImport :: [String]
+    , tempWholeFile  :: Bool
     } deriving Show
 
 data Flag
@@ -56,6 +57,7 @@ data Flag
     | GHCArgs String
     | CpphsArgs String
     | DropImport String
+    | WholeFile
     | HelpFlag
 
 -- We don't want to use elem, because that imposes Eq a
@@ -73,12 +75,14 @@ emptyTempFlags =
     , tempGHCArgs    = []
     , tempCpphsArgs  = []
     , tempDropImport = ["Language.Haskell.TH"]  -- The only way to override this is to edit this line
+    , tempWholeFile  = False
     }
 
 
 globalOptions :: [OptDescr Flag]
 globalOptions =
     [ Option "h?" ["help"] (NoArg HelpFlag) "Show this help text"
+    , Option "" ["whole-file"] (NoArg WholeFile) "Pass the whole file to GHC (for future use)"
     , Option "w" ["ghc"] (ReqArg WithGHC "PATH") "Use this GHC"
     , Option "" ["cpphs"] (ReqArg WithCpphs "PATH") "Use this cpphs"
     , Option "i" ["input"] (ReqArg InputFile "PATH") "Input file"
@@ -118,4 +122,5 @@ mkTempFlags = updateCfg
             GHCArgs args    -> t { tempGHCArgs    = tempGHCArgs t ++ words args }
             CpphsArgs args  -> t { tempCpphsArgs  = tempCpphsArgs t ++ words args }
             DropImport pre  -> t { tempDropImport = tempDropImport t ++ words pre }
+            WholeFile       -> t { tempWholeFile  = True }
             HelpFlag        -> t
