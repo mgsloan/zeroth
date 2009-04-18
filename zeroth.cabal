@@ -1,5 +1,5 @@
 Name:          zeroth
-Version:       2008.10.28
+Version:       2009.4.18
 Cabal-version: >= 1.6
 License:       BSD3
 License-file:  LICENSE
@@ -20,7 +20,7 @@ Tested-with:   GHC == 6.10.2
 
 Source-repository head
     Type:      darcs
-    Location:  http://patch-tag.com/publicrepos/zerothGreenrd
+    Location:  http://patch-tag.com/publicrepos/zerothDarcs2
 
 Library
     Build-depends:   base >= 4, haskell-src-exts >= 0.4.8, directory, process, syb, template-haskell

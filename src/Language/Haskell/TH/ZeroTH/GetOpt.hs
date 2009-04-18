@@ -16,11 +16,11 @@ getExecutable name Nothing  = fromMaybe (error errMsg) <$> findExecutable name
 
 mkConfig :: TempFlags -> IO Config
 mkConfig tmpFlags
-    = do ghcPath   <- getExecutable "ghc" (tempGHCPath tmpFlags)
-         cpphsPath <- getExecutable "cpphs" (tempCpphsPath tmpFlags)
+    = do ghcPath'   <- getExecutable "ghc" (tempGHCPath tmpFlags)
+         cpphsPath' <- getExecutable "cpphs" (tempCpphsPath tmpFlags)
          return (Config
-                 { ghcPath    = ghcPath
-                 , cpphsPath  = cpphsPath
+                 { ghcPath    = ghcPath'
+                 , cpphsPath  = cpphsPath'
                  , inputFile  = tempInputFile tmpFlags
                  , outputFile = tempOutputFile tmpFlags
                  , ghcArgs    = tempGHCArgs tmpFlags
