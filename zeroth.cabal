@@ -23,14 +23,15 @@ Source-repository head
     Location:  http://patch-tag.com/publicrepos/zerothGreenrd
 
 Library
-    Build-depends:   base, haskell-src-exts >= 0.4.8, directory, process
-    Exposed-modules: Zeroth
+    Build-depends:   base >= 4, haskell-src-exts >= 0.4.8, directory, process, syb, template-haskell
+    Exposed-modules: Zeroth, ZerothHelper
     Other-modules:   Comments, ListUtils
     GHC-options:     -Wall
     Hs-source-dirs:  src
 
 Executable zeroth
+    Build-depends:   base >= 4, haskell-src-exts >= 0.4.8, directory, process, syb, template-haskell
     Main-is:        Main.hs
-    Other-modules:  Comments, ListUtils, Setup, Zeroth
+    Other-modules:  Comments, ListUtils, Setup, Zeroth, ZerothHelper
     GHC-options:    -Wall
     Hs-source-dirs: src

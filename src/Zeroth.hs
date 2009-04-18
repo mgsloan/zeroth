@@ -7,12 +7,16 @@ import System.Process        ( runInteractiveProcess, waitForProcess )
 import System.IO             ( hPutStr, hClose, hGetContents, openTempFile, stdin )
 import System.Directory      ( removeFile, getTemporaryDirectory )
 import System.Exit           ( ExitCode (..) )
-import Control.Monad         ( when )
+import Control.Applicative   ( (<$>) )
+import Control.Monad         ( guard, when )
+import Data.Generics.Aliases ( mkT )
+import Data.Generics.Schemes ( everywhere )
 import Data.List             ( (\\), intersperse, isPrefixOf, nub, stripPrefix )
-import Data.Maybe            ( catMaybes, mapMaybe )
+import Data.Maybe            ( catMaybes, fromMaybe, mapMaybe )
 
 import Comments              ( Location, parseComments, mixComments )
 import ListUtils             ( replaceAll )
+import ZerothHelper          ( idPrefix )
 
 readFromFile :: FilePath -> IO String
 readFromFile "-"  = hGetContents stdin
@@ -26,11 +30,11 @@ zeroth :: FilePath -- ^ Path to GHC
        -> [String] -- ^ Import prefixes to drop
        -> IO String
 zeroth ghcPath cpphsPath ghcOpts cpphsOpts inputFile dropImports
-    = fmap prettyPrintAll $ zerothInternal ghcPath cpphsPath ghcOpts cpphsOpts inputFile dropImports
+    = prettyPrintAll <$> zerothInternal ghcPath cpphsPath ghcOpts cpphsOpts inputFile dropImports
 
 data ZeroTHOutput
     = ZeroTHOutput { originalSource :: String
-                   , minusTH :: Module
+                   , combinedOutput :: Module
                    , thOutput :: [(Location, String)]
                    }
 
@@ -50,25 +54,30 @@ zerothInternal ghcPath cpphsPath ghcOpts cpphsOpts inputFile dropImports
          when (inputFile == "-") $ hPutStr tmpHandle input >> hClose tmpHandle
          thInput     <- preprocessCpphs cpphsPath (["--noline","-DHASTH"]++cpphsOpts) inputFile2
          zerothInput <- preprocessCpphs cpphsPath (["--noline"]++cpphsOpts) inputFile2
-         thData <- case parseModule thInput of
-                     ParseOk m@(Module _ _ _ _ _ _ decls) -> runTH ghcPath m ghcOpts (mapMaybe getTH decls)
-                     e -> error (show e)
-         zerothData <- case parseModule zerothInput of
-                         ParseOk (Module loc m pragmas mWarn exports im decls)
-                           -> return (Module loc m pragmas mWarn exports (postProcessImports dropImports im $ snd thData) (filter delTH decls))
-                         e -> error (show e)
+         (thData, qualImports) <- case parseModule thInput of
+                                     ParseOk m -> unzip <$> runTH ghcPath m ghcOpts
+                                     e -> error $ show e
+         let reattach :: [Decl] -> [Decl]
+             reattach (SpliceDecl sLoc _ : t) = (parseDecls . fromMaybe err $ lookup (location sLoc) thData) ++ t
+                 where
+                     err = error $ "Could not find splice at " ++ show (location sLoc) ++ " in " ++ show thData
+             reattach x                       = x
+         combinedData <- case parseModule zerothInput of
+                           ParseOk (Module loc m pragmas mWarn exports im decls)
+                             -> return (Module loc m pragmas mWarn exports (postProcessImports dropImports im $ concat qualImports)
+                                        (everywhere (mkT reattach) decls))
+                           e -> error $ show e
          when (inputFile == "-") $ removeFile inputFile2
          return $ ZeroTHOutput { originalSource = input
-                               , minusTH = zerothData
-                               , thOutput = fst thData
+                               , combinedOutput = combinedData
+                               , thOutput = thData
                                }
-    where getTH (SpliceDecl l s) = Just (l,s)
-          getTH _ = Nothing
-          delTH (SpliceDecl _ _) = False
-          delTH _ = True
+    where parseDecls s = case parseModule $ "module Main where\n" ++ s of
+                           ParseOk (Module _ _ _ _ _ _ decls) -> decls
+                           e -> error $ show e
 
 prettyPrintAll :: ZeroTHOutput -> String
-prettyPrintAll out = unlines . mixComments (parseComments $ originalSource out) $ numberAndPrettyPrint (minusTH out) ++ ((-1, 1), "") : thOutput out
+prettyPrintAll out = unlines . mixComments (parseComments $ originalSource out) . numberAndPrettyPrint $ combinedOutput out
 
 location :: SrcLoc -> Location
 location sLoc = (srcLine sLoc, srcColumn sLoc)
@@ -78,11 +87,11 @@ numberAndPrettyPrint (Module mLoc m prags mbWarn exports imp decls)
     = (nAndPPrag =<< prags)
       ++ (location mLoc, concat $ "module "
                                  : prettyPrint m
-                                 : catMaybes [ fmap ppWarnText mbWarn
-                                                , fmap (\es -> " (" ++ concat (intersperse ", " $ map prettyPrint es) ++ ")") exports
-                                                ]
-                                   ++ [" where"])
-         : (map (\i -> (location (importLoc i), prettyPrint i)) imp ++ (nAndPDec =<< decls))
+                                 : catMaybes [ ppWarnText <$> mbWarn
+                                             , (\es -> " (" ++ concat (intersperse ", " $ prettyPrint <$> es) ++ ")") <$> exports
+                                             ]
+                                 ++ [" where"])
+         : (((\i -> (location (importLoc i), prettyPrint i)) <$> imp) ++ (nAndPDec =<< decls))
     where nAndPDec d@(TypeDecl loc _ _ _) = [(location loc, prettyPrint d)]
           nAndPDec d@(DataDecl loc _ _ _ _ _ _) = [(location loc, prettyPrint d)]
           nAndPDec d@(GDataDecl loc _ _ _ _ _ _ _) = [(location loc, prettyPrint d)]
@@ -92,7 +101,7 @@ numberAndPrettyPrint (Module mLoc m prags mbWarn exports imp decls)
           nAndPDec d@(DefaultDecl loc _) = [(location loc, prettyPrint d)]
           nAndPDec d@(SpliceDecl loc _) = [(location loc, prettyPrint d)]
           nAndPDec d@(TypeSig loc _ _) = [(location loc, prettyPrint d)]
-          nAndPDec (FunBind matches) = map (\match@(Match loc _ _ _ _ _) -> (location loc, prettyPrint match)) matches
+          nAndPDec (FunBind matches) = (\match@(Match loc _ _ _ _ _) -> (location loc, prettyPrint match)) <$> matches
           nAndPDec d@(PatBind loc _ _ _ _) = [(location loc, prettyPrint d)]
           nAndPDec d@(ForImp loc _ _ _ _ _) = [(location loc, prettyPrint d)]
           nAndPDec d@(ForExp loc _ _ _ _) = [(location loc, prettyPrint d)]
@@ -114,12 +123,12 @@ numberAndPrettyPrint (Module mLoc m prags mbWarn exports imp decls)
               | null filteredNames = []
               | otherwise          = [(location loc, prettyPrint $ LanguagePragma loc filteredNames)]
               where
-                  filteredNames = names \\ map Ident unwantedLanguageOptions
+                  filteredNames = names \\ (Ident <$> unwantedLanguageOptions)
           nAndPPrag p@(IncludePragma loc _) = [(location loc, prettyPrint p)]
           nAndPPrag p@(CFilesPragma loc _) = [(location loc, prettyPrint p)]
           nAndPPrag (OptionsPragma loc mt s) = [(location loc, prettyPrint . OptionsPragma loc mt $ filterOptions s)]
           nAndPPrag p@(UnknownTopPragma loc _ _) = [(location loc, prettyPrint p)]
-          filterOptions optStr = foldr (\opt -> replaceAll (" -" ++ opt ++ " ") " ") optStr $ "cpp" : "fth" : map ('X' :) unwantedLanguageOptions
+          filterOptions optStr = foldr (\opt -> replaceAll (" -" ++ opt ++ " ") " ") optStr $ "cpp" : "fth" : (('X' :) <$> unwantedLanguageOptions)
           unwantedLanguageOptions = ["CPP", "TemplateHaskell"]
 
 ppWarnText :: WarningText -> String
@@ -129,16 +138,17 @@ ppWarnText (WarnText s) = "{-# WARNING" ++ s ++ "#-}"
 -- Removes TH imports, and adds any qualified imports needed by generated TH code
 postProcessImports :: [String] -> [ImportDecl] -> [String] -> [ImportDecl]
 postProcessImports dropPrefixes oldImports qNames
-   = nub $  removeTH
-        ++ ( map (\q -> ImportDecl { importLoc = emptySrcLoc
-                                   , importModule = ModuleName q
-                                   , importQualified = True
-                                   , importSrc = False
-                                   , importAs = Nothing
-                                   , importSpecs = Nothing })
-            $ filter (\q -> not $ any (maybe False (\(ModuleName m) -> m == q) . importAs) removeTH) qNames )
-  where
-    removeTH = filter (not . (\(ModuleName m) -> any (`isPrefixOf` m) dropPrefixes) . importModule) oldImports
+    = nub $ removeTH
+            ++ mapMaybe (\q -> do guard . not $ any (maybe False (\(ModuleName m) -> m == q) . importAs) removeTH
+                                  return $ ImportDecl { importLoc = emptySrcLoc
+                                                      , importModule = ModuleName q
+                                                      , importQualified = True
+                                                      , importSrc = False
+                                                      , importAs = Nothing
+                                                      , importSpecs = Nothing })
+                        qNames
+    where
+        removeTH = filter (not . (\(ModuleName m) -> any (`isPrefixOf` m) dropPrefixes) . importModule) oldImports
 
 preprocessCpphs :: FilePath -- ^ Path to cpphs
                 -> [String]
@@ -157,14 +167,13 @@ preprocessCpphs cpphs args inputFile
 runTH :: FilePath -- ^ Path to GHC
       -> Module 
       -> [String]
-      -> [(SrcLoc,Splice)]
-      -> IO ([(Location,String)], [String])
-runTH ghcPath (Module _ _ pragmas _ _ imports _) ghcOpts th
+      -> IO ([((Location,String),[String])])
+runTH ghcPath (Module _ _ pragmas _ _ imports decls) ghcOpts
     = do tmpDir <- getTemporaryDirectory
          (tmpInPath,tmpInHandle) <- openTempFile tmpDir "TH.source.zeroth.hs"
          hPutStr tmpInHandle realM
          hClose tmpInHandle
-         let args = [tmpInPath,"-fno-code"]++ghcOpts
+         let args = [tmpInPath,"-fno-code"]++ghcOpts++extraOpts
          --putStrLn $ "Module:\n" ++ realM
          --putStrLn $ "Running: " ++ unwords (ghcPath:args)
          (inH,outH,errH,pid) <- runInteractiveProcess ghcPath args Nothing Nothing
@@ -176,42 +185,35 @@ runTH ghcPath (Module _ _ pragmas _ _ imports _) ghcOpts th
          length errMsg `seq` hClose errH
          eCode <- waitForProcess pid
          -- removeFile tmpInPath
+         let check :: [(((Location,String),[String]), String)] -> ((Location,String),[String])
+             check [(ret,_)] = ret
+             check _         = error $ "Failed to parse result:\n" ++ output
          case eCode of
            ExitFailure err -> error (unwords (ghcPath:args) ++ ": failure: " ++ show err ++ ":\n" ++ errMsg)
            ExitSuccess | not (null errMsg) -> error (unwords (ghcPath:args) ++ ": failure:\n" ++ errMsg)
-                       | otherwise -> case mapMaybe (stripPrefix idPrefix) $ lines output of
-                                        [h] -> case reads h of
-                                            [(ret,_)] -> return ret
-                                            _         -> error $ "Failed to parse result:\n"++output
-                                        _   -> error $ "Failed to parse result:\n"++output
-    where thImport = ImportDecl emptySrcLoc (ModuleName "Language.Haskell.TH") False False Nothing Nothing
-          pp :: (Pretty a) => a -> String
+                       | otherwise -> return . mapMaybe (fmap (check . reads) . stripPrefix idPrefix) $ lines output
+    where pp :: (Pretty a) => a -> String
           pp = prettyPrintWithMode (defaultMode{layout = PPInLine})
-          realM = unlines $ map (pp . disableWarnings) pragmas
-                            ++ ["module Main ( main ) where"]
-                            ++ map pp (thImport:imports)
-                            ++ ["import qualified Data.Generics.Schemes"]
-                            ++ ["import qualified Data.Maybe"]
-                            ++ ["import qualified System.IO"]
-                            ++ ["import qualified Prelude"]
-                            ++ ["main = Prelude.undefined"]
-                            ++ ["$( do decls <- Prelude.sequence " ++ pp (List splices)]
-                            ++ ["      runIO $ do Prelude.putStrLn $ " ++ show idPrefix
-                                ++ " ++ Prelude.show ( Prelude.map (\\(l,d) -> (l,pprint d)) (Prelude.zip "
-                                ++ pp (List locations) ++ " decls)"]
-                            ++ ["                         , Prelude.map (Data.Maybe.fromJust . nameModule) $ Data.Generics.Schemes.listify (Data.Maybe.isJust . nameModule) decls)"]
-                            ++ ["                 System.IO.hFlush System.IO.stdout"]
-                            ++ ["      Prelude.return []"]
-                            ++ [" )"]
-          splices = flip map th $ \(_src,splice) -> spliceToExp splice
-          locations = flip map th $ \(loc,_splice) -> Tuple [ Lit (Int (fromIntegral (srcLine loc)))
-                                                            , Lit (Int (fromIntegral (srcColumn loc)))
-                                                            ]
+          realM = unlines $ (pp . disableWarnings <$> pragmas)
+                            ++ ["module ZerothTemp where"]
+                            ++ (pp <$> imports)
+                            ++ ["import qualified ZerothHelper"]
+                            ++ (prettyPrint <$> everywhere (mkT editSplice) decls)
+          editSplice :: Decl -> Decl
+          editSplice (SpliceDecl loc splice)
+              = SpliceDecl loc
+                  . ParenSplice
+                  . App (App (Var . Qual (ModuleName "ZerothHelper") $ Ident "helper")
+                             (Paren $ spliceToExp splice))
+                  . Tuple
+                  $ Lit . Int . fromIntegral <$> [ srcLine loc, srcColumn loc ]
+          editSplice x = x
           spliceToExp (ParenSplice e) = e
           spliceToExp _ = error "TH: FIXME!"
-          idPrefix = "ZEROTH OUTPUT: "
-          disableWarnings (OptionsPragma loc Nothing    s) = OptionsPragma loc Nothing $ s ++ " -w" -- Turn off all warnings (works for GHC)
-          disableWarnings (OptionsPragma loc (Just GHC) s) = OptionsPragma loc (Just GHC) $ s ++ " -w"
+          extraOpts = ["-w", "-package", "base", "-package", "zeroth"]
+          extraOpts' = (' ' :) =<< extraOpts
+          disableWarnings (OptionsPragma loc Nothing    s) = OptionsPragma loc Nothing $ s ++ extraOpts' -- Turn off all warnings (works for GHC)
+          disableWarnings (OptionsPragma loc (Just GHC) s) = OptionsPragma loc (Just GHC) $ s ++ extraOpts'
           disableWarnings x = x
 
 emptySrcLoc :: SrcLoc
