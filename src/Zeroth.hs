@@ -4,6 +4,7 @@ module Zeroth
 
 import Language.Haskell.Exts hiding ( comments )
 import System.Process        ( runInteractiveProcess, waitForProcess )
+import System.Info           ( os )
 import System.IO             ( hPutStr, hClose, hGetContents, openTempFile, stdin )
 import System.Directory      ( removeFile, getTemporaryDirectory )
 import System.Exit           ( ExitCode (..) )
@@ -173,7 +174,7 @@ runTH ghcPath (Module _ _ pragmas _ _ imports decls) ghcOpts
          (tmpInPath,tmpInHandle) <- openTempFile tmpDir "TH.source.zeroth.hs"
          hPutStr tmpInHandle realM
          hClose tmpInHandle
-         let args = [tmpInPath,"-fno-code"]++ghcOpts++extraOpts
+         let args = [tmpInPath]++ghcOpts++extraOpts
          --putStrLn $ "Module:\n" ++ realM
          --putStrLn $ "Running: " ++ unwords (ghcPath:args)
          (inH,outH,errH,pid) <- runInteractiveProcess ghcPath args Nothing Nothing
@@ -210,7 +211,10 @@ runTH ghcPath (Module _ _ pragmas _ _ imports decls) ghcOpts
           editSplice x = x
           spliceToExp (ParenSplice e) = e
           spliceToExp _ = error "TH: FIXME!"
-          extraOpts = ["-w", "-package", "base", "-package", "zeroth"]
+          nullFile
+              | "mingw" `isPrefixOf` os = "NUL:"
+              | otherwise               = "/dev/null"
+          extraOpts = ["-w", "-package", "base", "-package", "zeroth", "-o", nullFile, "-ohi", nullFile, "-fno-code"]
           extraOpts' = (' ' :) =<< extraOpts
           disableWarnings (OptionsPragma loc Nothing    s) = OptionsPragma loc Nothing $ s ++ extraOpts' -- Turn off all warnings (works for GHC)
           disableWarnings (OptionsPragma loc (Just GHC) s) = OptionsPragma loc (Just GHC) $ s ++ extraOpts'
