@@ -12,7 +12,7 @@ import Control.Applicative   ( (<$>) )
 import Control.Monad         ( guard, when )
 import Data.Generics.Aliases ( mkT )
 import Data.Generics.Schemes ( everywhere )
-import Data.List             ( (\\), intersperse, isPrefixOf, nub, stripPrefix )
+import Data.List             ( (\\), intersperse, isInfixOf, isPrefixOf, nub, stripPrefix )
 import Data.Maybe            ( catMaybes, fromMaybe, mapMaybe )
 
 import Comments              ( Location, parseComments, mixComments )
@@ -53,8 +53,12 @@ zerothInternal ghcPath cpphsPath ghcOpts cpphsOpts inputFile dropImports
                                        "-" -> openTempFile tmpDir "TH.cpphs.zeroth"
                                        _   -> return (inputFile, undefined)
          when (inputFile == "-") $ hPutStr tmpHandle input >> hClose tmpHandle
-         thInput     <- preprocessCpphs cpphsPath (["--noline","-DHASTH"]++cpphsOpts) inputFile2
-         zerothInput <- preprocessCpphs cpphsPath (["--noline"]++cpphsOpts) inputFile2
+         let firstLine      = head $ lines input
+             shouldRunCpphs = "-cpp" `elem` ghcOpts || " -cpp " `isInfixOf` firstLine || " CPP " `isInfixOf` firstLine 
+         thInput     <- if shouldRunCpphs then preprocessCpphs cpphsPath (["--noline","-DHASTH"]++cpphsOpts) inputFile2
+                                          else return input
+         zerothInput <- if shouldRunCpphs then preprocessCpphs cpphsPath (["--noline"]++cpphsOpts) inputFile2
+                                          else return input
          (thData, qualImports) <- case parseModule thInput of
                                      ParseOk m -> unzip <$> runTH ghcPath m ghcOpts
                                      e -> error $ show e
