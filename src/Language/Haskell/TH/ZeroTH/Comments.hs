@@ -1,4 +1,4 @@
-module Comments where
+module Language.Haskell.TH.ZeroTH.Comments where
 
 type Location = (Int, Int)
 

@@ -1,5 +1,5 @@
-module Zeroth
-    ( prettyPrintAll, zeroth, zerothInternal
+module Language.Haskell.TH.ZeroTH
+    ( prettyPrintAll, zeroTH, zeroTHInternal
     ) where
 
 import Language.Haskell.Exts hiding ( comments )
@@ -15,24 +15,17 @@ import Data.Generics.Schemes ( everywhere, listify )
 import Data.List             ( (\\), intersperse, isInfixOf, isPrefixOf, nub, stripPrefix )
 import Data.Maybe            ( catMaybes, fromMaybe, mapMaybe )
 
-import Comments              ( Location, parseComments, mixComments )
-import ListUtils             ( replaceAll )
-import ZerothHelper          ( idPrefix )
+import Language.Haskell.TH.ZeroTH.Config   ( Config(..) )
+import Language.Haskell.TH.ZeroTH.Comments ( Location, parseComments, mixComments )
+import Language.Haskell.TH.ZeroTH.Helper   ( idPrefix )
+import ListUtils                           ( replaceAll )
 
 readFromFile :: FilePath -> IO String
 readFromFile "-"  = hGetContents stdin
 readFromFile path = readFile path
 
-zeroth :: FilePath -- ^ Path to GHC
-       -> FilePath -- ^ Path to cpphs
-       -> [String] -- ^ GHC options
-       -> [String] -- ^ cpphs options
-       -> Bool     -- ^ whether to pass the whole file to GHC
-       -> String   -- ^ Input filename, or "-" for stdin
-       -> [String] -- ^ Import prefixes to drop
-       -> IO String
-zeroth ghcPath cpphsPath ghcOpts cpphsOpts wholeFile inputFile dropImports
-    = prettyPrintAll <$> zerothInternal ghcPath cpphsPath ghcOpts cpphsOpts wholeFile inputFile dropImports
+zeroTH :: Config -> IO String
+zeroTH = (prettyPrintAll <$>) . zeroTHInternal
 
 data ZeroTHOutput
     = ZeroTHOutput { originalSource :: String
@@ -40,29 +33,22 @@ data ZeroTHOutput
                    , thOutput :: [(Location, String)]
                    }
 
-zerothInternal :: FilePath -- ^ Path to GHC
-               -> FilePath -- ^ Path to cpphs
-               -> [String] -- ^ GHC options
-               -> [String] -- ^ cpphs options
-               -> Bool     -- ^ whether to pass the whole file to GHC
-               -> String   -- ^ Input filename, or "-" for stdin
-               -> [String] -- ^ Import prefixes to drop
-               -> IO ZeroTHOutput
-zerothInternal ghcPath cpphsPath ghcOpts cpphsOpts wholeFile inputFile dropImports
-    = do input       <- readFromFile inputFile
+zeroTHInternal :: Config -> IO ZeroTHOutput
+zeroTHInternal c
+    = do input       <- readFromFile $ inputFile c
          tmpDir      <- getTemporaryDirectory
-         (inputFile2, tmpHandle) <- case inputFile of
+         (inputFile2, tmpHandle) <- case inputFile c of
                                        "-" -> openTempFile tmpDir "TH.cpphs.zeroth"
-                                       _   -> return (inputFile, undefined)
-         when (inputFile == "-") $ hPutStr tmpHandle input >> hClose tmpHandle
+                                       _   -> return (inputFile c, undefined)
+         when (inputFile c == "-") $ hPutStr tmpHandle input >> hClose tmpHandle
          let firstLine      = head $ lines input
-             shouldRunCpphs = "-cpp" `elem` ghcOpts || " -cpp " `isInfixOf` firstLine || " CPP " `isInfixOf` firstLine 
-         thInput     <- if shouldRunCpphs then preprocessCpphs cpphsPath (["--noline","-DHASTH"]++cpphsOpts) inputFile2
+             shouldRunCpphs = "-cpp" `elem` ghcArgs c || " -cpp " `isInfixOf` firstLine || " CPP " `isInfixOf` firstLine 
+         thInput     <- if shouldRunCpphs then preprocessCpphs (cpphsPath c) (["--noline","-DHASTH"]++cpphsArgs c) inputFile2
                                           else return input
-         zerothInput <- if shouldRunCpphs then preprocessCpphs cpphsPath (["--noline"]++cpphsOpts) inputFile2
+         zerothInput <- if shouldRunCpphs then preprocessCpphs (cpphsPath c) (["--noline"]++cpphsArgs c) inputFile2
                                           else return input
          (thData, qualImports) <- case parseModule thInput of
-                                     ParseOk m -> unzip <$> runTH ghcPath ((if wholeFile then id else onlySplices) m) ghcOpts
+                                     ParseOk m -> unzip <$> runTH (ghcPath c) ((if wholeFile c then id else onlySplices) m) (ghcArgs c)
                                      e -> error $ show e
          let reattach :: [Decl] -> [Decl]
              reattach (SpliceDecl sLoc _ : t) = (parseDecls . fromMaybe err $ lookup (location sLoc) thData) ++ t
@@ -71,19 +57,19 @@ zerothInternal ghcPath cpphsPath ghcOpts cpphsOpts wholeFile inputFile dropImpor
              reattach x                       = x
          combinedData <- case parseModule zerothInput of
                            ParseOk (Module loc m pragmas mWarn exports im decls)
-                             -> return (Module loc m pragmas mWarn exports (postProcessImports dropImports im $ concat qualImports)
+                             -> return (Module loc m pragmas mWarn exports (postProcessImports (dropImport c) im $ concat qualImports)
                                         (everywhere (mkT reattach) decls))
                            e -> error $ show e
-         when (inputFile == "-") $ removeFile inputFile2
+         when (inputFile c == "-") $ removeFile inputFile2
          return $ ZeroTHOutput { originalSource = input
                                , combinedOutput = combinedData
                                , thOutput = thData
                                }
-    where parseDecls s = case parseModule $ "module Main where\n" ++ s of
+    where parseDecls s = case parseModule s of
                            ParseOk (Module _ _ _ _ _ _ decls) -> decls
                            e -> error $ show e
           onlySplices (Module loc m pragmas mWarn exports im decls) = Module loc m pragmas mWarn exports im $ listify isSplice decls
-          isSplice s@(SpliceDecl _ _) = True
+          isSplice (SpliceDecl _ _) = True
           isSplice _ = False
 
 prettyPrintAll :: ZeroTHOutput -> String
@@ -164,8 +150,8 @@ preprocessCpphs :: FilePath -- ^ Path to cpphs
                 -> [String]
                 -> String
                 -> IO String
-preprocessCpphs cpphs args inputFile
-    = do (inH,outH,_,pid) <- runInteractiveProcess cpphs (inputFile:args) Nothing Nothing
+preprocessCpphs cpphs args inputFilename
+    = do (inH,outH,_,pid) <- runInteractiveProcess cpphs (inputFilename:args) Nothing Nothing
          hClose inH
          output <- hGetContents outH
          length output `seq` hClose outH
@@ -178,15 +164,15 @@ runTH :: FilePath -- ^ Path to GHC
       -> Module 
       -> [String]
       -> IO ([((Location,String),[String])])
-runTH ghcPath (Module _ _ pragmas _ _ imports decls) ghcOpts
+runTH ghc (Module _ _ pragmas _ _ imports decls) ghcOpts
     = do tmpDir <- getTemporaryDirectory
          (tmpInPath,tmpInHandle) <- openTempFile tmpDir "TH.source.zeroth.hs"
          hPutStr tmpInHandle realM
          hClose tmpInHandle
          let args = [tmpInPath]++ghcOpts++extraOpts
          --putStrLn $ "Module:\n" ++ realM
-         --putStrLn $ "Running: " ++ unwords (ghcPath:args)
-         (inH,outH,errH,pid) <- runInteractiveProcess ghcPath args Nothing Nothing
+         --putStrLn $ "Running: " ++ unwords (ghc:args)
+         (inH,outH,errH,pid) <- runInteractiveProcess ghc args Nothing Nothing
          hClose inH
          output <- hGetContents outH
          --putStrLn $ "TH Data:\n" ++ output
@@ -199,21 +185,22 @@ runTH ghcPath (Module _ _ pragmas _ _ imports decls) ghcOpts
              check [(ret,_)] = ret
              check _         = error $ "Failed to parse result:\n" ++ output
          case eCode of
-           ExitFailure err -> error (unwords (ghcPath:args) ++ ": failure: " ++ show err ++ ":\n" ++ errMsg)
-           ExitSuccess | not (null errMsg) -> error (unwords (ghcPath:args) ++ ": failure:\n" ++ errMsg)
+           ExitFailure err -> error (unwords (ghc:args) ++ ": failure: " ++ show err ++ ":\n" ++ errMsg)
+           ExitSuccess | not (null errMsg) -> error (unwords (ghc:args) ++ ": failure:\n" ++ errMsg)
                        | otherwise -> return . mapMaybe (fmap (check . reads) . stripPrefix idPrefix) $ lines output
     where pp :: (Pretty a) => a -> String
           pp = prettyPrintWithMode (defaultMode{layout = PPInLine})
           realM = unlines $ (pp . disableWarnings <$> pragmas)
                             ++ ["module ZerothTemp where"]
                             ++ (pp <$> imports)
-                            ++ ["import qualified ZerothHelper"]
+                            ++ ["import qualified " ++ helperModule]
                             ++ (prettyPrint <$> everywhere (mkT editSplice) decls)
+          helperModule = "Language.Haskell.TH.ZeroTH.Helper"
           editSplice :: Decl -> Decl
           editSplice (SpliceDecl loc splice)
               = SpliceDecl loc
                   . ParenSplice
-                  . App (App (Var . Qual (ModuleName "ZerothHelper") $ Ident "helper")
+                  . App (App (Var . Qual (ModuleName helperModule) $ Ident "helper")
                              (Paren $ spliceToExp splice))
                   . Tuple
                   $ Lit . Int . fromIntegral <$> [ srcLine loc, srcColumn loc ]

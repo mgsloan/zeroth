@@ -1,4 +1,4 @@
-module ZerothHelper ( helper, idPrefix ) where
+module Language.Haskell.TH.ZeroTH.Helper ( helper, idPrefix ) where
 
 import Data.Generics.Schemes      ( listify )
 import Data.Maybe                 ( fromJust, isJust )
@@ -6,7 +6,7 @@ import Language.Haskell.TH.Ppr    ( pprint )
 import Language.Haskell.TH.Syntax ( Dec, nameModule, Q, runIO )
 import System.IO                  ( hFlush, stdout )
 
-import Comments                   ( Location )
+import Language.Haskell.TH.ZeroTH.Comments ( Location )
 
 idPrefix :: String
 idPrefix = "ZEROTH OUTPUT: "

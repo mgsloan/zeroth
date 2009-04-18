@@ -1,41 +1,32 @@
-module Setup where
+module Language.Haskell.TH.ZeroTH.GetOpt where
 
+import Control.Applicative    ( (<$>) )
 import System.Console.GetOpt  ( ArgDescr (..), OptDescr (..), usageInfo, getOpt', ArgOrder (..) )
 import System.Environment     ( getProgName )
 import System.Exit            ( exitWith, ExitCode (..) )
 import System.Directory       ( findExecutable )
 import Data.Maybe             ( fromMaybe )
 
-data ConfigFlags
-    = ConfigFlags
-    { configGHCPath    :: FilePath
-    , configInputFile  :: FilePath
-    , configOutputFile :: FilePath
-    , configCpphsPath  :: FilePath
-    , configGHCArgs    :: [String]
-    , configCpphsArgs  :: [String]
-    , configDropImport :: [String]
-    , configWholeFile  :: Bool
-    } deriving Show
+import Language.Haskell.TH.ZeroTH.Config ( Config(..) )
 
 getExecutable :: String -> Maybe FilePath -> IO FilePath
 getExecutable _ (Just path) = return path
-getExecutable name Nothing  = fmap (fromMaybe (error errMsg)) (findExecutable name)
+getExecutable name Nothing  = fromMaybe (error errMsg) <$> findExecutable name
     where errMsg = "Couldn't find: "++name
 
-mkConfigFlags :: TempFlags -> IO ConfigFlags
-mkConfigFlags tmpFlags
+mkConfig :: TempFlags -> IO Config
+mkConfig tmpFlags
     = do ghcPath   <- getExecutable "ghc" (tempGHCPath tmpFlags)
          cpphsPath <- getExecutable "cpphs" (tempCpphsPath tmpFlags)
-         return (ConfigFlags
-                 { configGHCPath    = ghcPath
-                 , configCpphsPath  = cpphsPath
-                 , configInputFile  = tempInputFile tmpFlags
-                 , configOutputFile = tempOutputFile tmpFlags
-                 , configGHCArgs    = tempGHCArgs tmpFlags
-                 , configCpphsArgs  = tempCpphsArgs tmpFlags
-                 , configDropImport = tempDropImport tmpFlags
-                 , configWholeFile  = tempWholeFile tmpFlags})
+         return (Config
+                 { ghcPath    = ghcPath
+                 , cpphsPath  = cpphsPath
+                 , inputFile  = tempInputFile tmpFlags
+                 , outputFile = tempOutputFile tmpFlags
+                 , ghcArgs    = tempGHCArgs tmpFlags
+                 , cpphsArgs  = tempCpphsArgs tmpFlags
+                 , dropImport = tempDropImport tmpFlags
+                 , wholeFile  = tempWholeFile tmpFlags})
 
 data TempFlags
     = TempFlags
@@ -64,7 +55,6 @@ data Flag
 hasHelpFlag :: [Flag] -> Bool
 hasHelpFlag flags = not . null $ [ () | HelpFlag <- flags ]
 
-
 emptyTempFlags :: TempFlags
 emptyTempFlags =
     TempFlags
@@ -77,7 +67,6 @@ emptyTempFlags =
     , tempDropImport = ["Language.Haskell.TH"]  -- The only way to override this is to edit this line
     , tempWholeFile  = False
     }
-
 
 globalOptions :: [OptDescr Flag]
 globalOptions =
