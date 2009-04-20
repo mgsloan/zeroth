@@ -1,13 +1,22 @@
+{-# LANGUAGE TemplateHaskell, CPP #-}
+{-# OPTIONS_GHC -fno-warn-missing-signatures -pgmP cpphs -optP --hashes -optP --cpp #-}
 module Language.Haskell.TH.ZeroTH.GetOpt where
 
-import Control.Applicative    ( (<$>) )
-import System.Console.GetOpt  ( ArgDescr (..), OptDescr (..), usageInfo, getOpt', ArgOrder (..) )
-import System.Environment     ( getProgName )
-import System.Exit            ( exitWith, ExitCode (..) )
-import System.Directory       ( findExecutable )
-import Data.Maybe             ( fromMaybe )
+import Control.Applicative                ( (<$>) )
+import Data.Monoid                        ( Any(..), Last(..), Monoid(..) )
+import Data.Monoid.Record                 ( addP )
+import System.Console.GetOpt              ( ArgDescr (..), OptDescr (..) )
+import System.Console.GetOpt.Skeleton     ( mParseArgs )
+import System.Console.GetOpt.StandardOpts ( StandardFlag, stdOpts )
+import System.Directory                   ( findExecutable )
+import Data.Maybe                         ( fromMaybe )
+
+import Data.DeriveTH       ( derive )
+import Data.Derive.LazySet ( makeLazySet )
+import Data.Derive.Monoid  ( makeMonoid )
 
 import Language.Haskell.TH.ZeroTH.Config ( Config(..) )
+import Paths_zeroth                      ( version )
 
 getExecutable :: String -> Maybe FilePath -> IO FilePath
 getExecutable _ (Just path) = return path
@@ -16,100 +25,61 @@ getExecutable name Nothing  = fromMaybe (error errMsg) <$> findExecutable name
 
 mkConfig :: TempFlags -> IO Config
 mkConfig tmpFlags
-    = do ghcPath'   <- getExecutable "ghc" (tempGHCPath tmpFlags)
-         cpphsPath' <- getExecutable "cpphs" (tempCpphsPath tmpFlags)
+    = do ghcPath'   <- getExecutable "ghc" . getLast $ tempGHCPath tmpFlags
+         cpphsPath' <- getExecutable "cpphs" . getLast $ tempCpphsPath tmpFlags
          return (Config
                  { ghcPath    = ghcPath'
                  , cpphsPath  = cpphsPath'
-                 , inputFile  = tempInputFile tmpFlags
-                 , outputFile = tempOutputFile tmpFlags
+                 , inputFile  = fromMaybe "-" . getLast $ tempInputFile tmpFlags
+                 , outputFile = fromMaybe "-" . getLast $ tempOutputFile tmpFlags
                  , ghcArgs    = tempGHCArgs tmpFlags
                  , cpphsArgs  = tempCpphsArgs tmpFlags
-                 , dropImport = tempDropImport tmpFlags
-                 , wholeFile  = tempWholeFile tmpFlags})
+                 , dropImport = let result = tempDropImport tmpFlags in
+                                    if null result then defaultDrop else result
+                 , wholeFile  = getAny $ tempWholeFile tmpFlags})
+    where
+        defaultDrop = ["Language.Haskell.TH"]
 
 data TempFlags
     = TempFlags
-    { tempGHCPath    :: Maybe FilePath
-    , tempInputFile  :: FilePath
-    , tempOutputFile :: FilePath
-    , tempCpphsPath  :: Maybe FilePath
+    { tempGHCPath    :: Last FilePath
+    , tempInputFile  :: Last FilePath
+    , tempOutputFile :: Last FilePath
+    , tempCpphsPath  :: Last FilePath
     , tempGHCArgs    :: [String]
     , tempCpphsArgs  :: [String]
     , tempDropImport :: [String]
-    , tempWholeFile  :: Bool
-    } deriving Show
-
-data Flag
-    = WithGHC FilePath
-    | InputFile FilePath
-    | OutputFile FilePath
-    | WithCpphs FilePath
-    | GHCArgs String
-    | CpphsArgs String
-    | DropImport String
-    | WholeFile
-    | HelpFlag
-
--- We don't want to use elem, because that imposes Eq a
-hasHelpFlag :: [Flag] -> Bool
-hasHelpFlag flags = not . null $ [ () | HelpFlag <- flags ]
-
-emptyTempFlags :: TempFlags
-emptyTempFlags =
-    TempFlags
-    { tempGHCPath    = Nothing
-    , tempInputFile  = "-"
-    , tempOutputFile = "-"
-    , tempCpphsPath  = Nothing
-    , tempGHCArgs    = []
-    , tempCpphsArgs  = []
-    , tempDropImport = ["Language.Haskell.TH"]  -- The only way to override this is to edit this line
-    , tempWholeFile  = False
+    , tempWholeFile  :: Any
+    , tempStdFlag    :: Last StandardFlag
     }
 
-globalOptions :: [OptDescr Flag]
-globalOptions =
-    [ Option "h?" ["help"] (NoArg HelpFlag) "Show this help text"
-    , Option "" ["whole-file"] (NoArg WholeFile) "Pass the whole file to GHC (for future use)"
-    , Option "w" ["ghc"] (ReqArg WithGHC "PATH") "Use this GHC"
-    , Option "" ["cpphs"] (ReqArg WithCpphs "PATH") "Use this cpphs"
-    , Option "i" ["input"] (ReqArg InputFile "PATH") "Input file"
-    , Option "o" ["output"] (ReqArg OutputFile "PATH") "Output file"
-    , Option "" ["ghc-args"] (ReqArg GHCArgs "Arguments") "Arguments to GHC"
-    , Option "" ["cpphs-args"] (ReqArg CpphsArgs "Arguments") "Arguments to cpphs"
-    , Option "d" ["drop-import"] (ReqArg DropImport "Prefix") "Any import that starts with this prefix will be removed"
-    ]
+$(derive makeMonoid ''TempFlags)
+$(derive makeLazySet ''TempFlags)
 
-printHelp :: IO ()
-printHelp =
-    do pname <- getProgName
-       let syntax_line = concat [ "Usage: ", pname
-                                , " [FLAGS]\n"]
-       putStrLn (usageInfo syntax_line globalOptions)
+-- XXX: Use Data.Derive to generate these instead
+#define ADDER(FIELD,SET) FIELD ## ' = addP FIELD SET
+#define ADDERT(FIELD) ADDER(temp ## FIELD, setTemp ## FIELD)
+ADDERT(GHCPath)
+ADDERT(InputFile)
+ADDERT(OutputFile)
+ADDERT(CpphsPath)
+ADDERT(GHCArgs)
+ADDERT(CpphsArgs)
+ADDERT(DropImport)
+ADDERT(WholeFile)
+ADDERT(StdFlag)
 
-parseArgs :: [String] -> IO TempFlags
-parseArgs args =
-  case getOpt' RequireOrder globalOptions args of
-    (flags, _, _, []) | hasHelpFlag flags -> do
-      printHelp
-      exitWith ExitSuccess
-    (flags, [], _, []) -> return (mkTempFlags flags emptyTempFlags)
-    (_, _, _, errs) -> do putStrLn "Errors:"
-                          mapM_ putStrLn errs
-                          exitWith (ExitFailure 1)
+globalOptions :: [OptDescr (TempFlags -> TempFlags)]
+globalOptions = stdOpts tempStdFlag'
+    ++ [ Option "" ["whole-file"] (NoArg $ tempWholeFile' True) "Pass the whole file to GHC (for future use)"
+       , Option "w" ["ghc"] (ReqArg tempGHCPath' "PATH") "Use this GHC"
+       , Option "" ["cpphs"] (ReqArg tempCpphsPath' "PATH") "Use this cpphs"
+       , Option "i" ["input"] (ReqArg tempInputFile' "PATH") "Input file"
+       , Option "o" ["output"] (ReqArg tempOutputFile' "PATH") "Output file"
+       , Option "" ["ghc-args"] (ReqArg (tempGHCArgs' . words) "Arguments") "Arguments to GHC"
+       , Option "" ["cpphs-args"] (ReqArg (tempCpphsArgs' . words) "Arguments") "Arguments to cpphs"
+       , Option "d" ["drop-import"] (ReqArg (tempDropImport' . words) "Prefix") "Any import that starts with this prefix will be removed"
+       ]
 
-mkTempFlags :: [Flag] -> TempFlags -> TempFlags
-mkTempFlags = updateCfg
-  where updateCfg [] t = t
-        updateCfg (fl:flags) t = updateCfg flags $
-          case fl of
-            WithGHC path    -> t { tempGHCPath    = Just path }
-            InputFile path  -> t { tempInputFile  = path }
-            OutputFile path -> t { tempOutputFile = path }
-            WithCpphs path  -> t { tempCpphsPath  = Just path }
-            GHCArgs args    -> t { tempGHCArgs    = tempGHCArgs t ++ words args }
-            CpphsArgs args  -> t { tempCpphsArgs  = tempCpphsArgs t ++ words args }
-            DropImport pre  -> t { tempDropImport = tempDropImport t ++ words pre }
-            WholeFile       -> t { tempWholeFile  = True }
-            HelpFlag        -> t
+myParseArgs :: [String] -> IO TempFlags
+myParseArgs = mParseArgs version globalOptions tempStdFlag
