@@ -36,21 +36,21 @@ mkConfig tmpFlags
                  , cpphsArgs  = tempCpphsArgs tmpFlags
                  , dropImport = let result = tempDropImport tmpFlags in
                                     if null result then defaultDrop else result
-                 , wholeFile  = getAny $ tempWholeFile tmpFlags})
+                 , wholeFile  = not . getAny $ tempJustSplices tmpFlags})
     where
         defaultDrop = ["Language.Haskell.TH"]
 
 data TempFlags
     = TempFlags
-    { tempGHCPath    :: Last FilePath
-    , tempInputFile  :: Last FilePath
-    , tempOutputFile :: Last FilePath
-    , tempCpphsPath  :: Last FilePath
-    , tempGHCArgs    :: [String]
-    , tempCpphsArgs  :: [String]
-    , tempDropImport :: [String]
-    , tempWholeFile  :: Any
-    , tempStdFlag    :: Last StandardFlag
+    { tempGHCPath     :: Last FilePath
+    , tempInputFile   :: Last FilePath
+    , tempOutputFile  :: Last FilePath
+    , tempCpphsPath   :: Last FilePath
+    , tempGHCArgs     :: [String]
+    , tempCpphsArgs   :: [String]
+    , tempDropImport  :: [String]
+    , tempJustSplices :: Any
+    , tempStdFlag     :: Last StandardFlag
     }
 
 $(derive makeMonoid ''TempFlags)
@@ -66,12 +66,12 @@ ADDERT(CpphsPath)
 ADDERT(GHCArgs)
 ADDERT(CpphsArgs)
 ADDERT(DropImport)
-ADDERT(WholeFile)
+ADDERT(JustSplices)
 ADDERT(StdFlag)
 
 globalOptions :: [OptDescr (TempFlags -> TempFlags)]
 globalOptions = stdOpts tempStdFlag'
-    ++ [ Option "" ["whole-file"] (NoArg $ tempWholeFile' True) "Pass the whole file to GHC (for future use)"
+    ++ [ Option "" ["only-splices"] (NoArg $ tempJustSplices' True) "Only pass the splices to GHC, not the whole file (for faster processing)"
        , Option "w" ["ghc"] (ReqArg tempGHCPath' "PATH") "Use this GHC"
        , Option "" ["cpphs"] (ReqArg tempCpphsPath' "PATH") "Use this cpphs"
        , Option "i" ["input"] (ReqArg tempInputFile' "PATH") "Input file"
