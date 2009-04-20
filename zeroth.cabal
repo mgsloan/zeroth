@@ -27,11 +27,9 @@ Library
     Exposed-modules: Language.Haskell.TH.ZeroTH.Config, Language.Haskell.TH.ZeroTH.GetOpt, Language.Haskell.TH.ZeroTH, Language.Haskell.TH.ZeroTH.Helper, Language.Haskell.TH.ZeroTH.Comments
     Other-modules:   ListUtils, Paths_zeroth
     GHC-options:     -Wall
-    Hs-source-dirs:  src
 
 Executable zeroth
     Build-depends:   base >= 4, haskell-src-exts >= 0.4.8, directory, process, syb, template-haskell, hskeleton >= 0.1, hskeleton < 0.2, derive, monoid-record >= 0.1, monoid-record < 0.2
     Main-is:        Main.hs
     Other-modules:  Language.Haskell.TH.ZeroTH.Comments, ListUtils, Language.Haskell.TH.ZeroTH.Config, Language.Haskell.TH.ZeroTH.GetOpt, Language.Haskell.TH.ZeroTH, Language.Haskell.TH.ZeroTH.Helper, Paths_zeroth
     GHC-options:    -Wall
-    Hs-source-dirs: src
