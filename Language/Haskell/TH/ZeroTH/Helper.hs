@@ -1,5 +1,6 @@
 module Language.Haskell.TH.ZeroTH.Helper ( helper, idPrefix ) where
 
+import Control.Applicative        ( (<$>) )
 import Data.Generics.Schemes      ( listify )
 import Data.Maybe                 ( fromJust, isJust )
 import Language.Haskell.TH.Ppr    ( pprint )
@@ -14,6 +15,6 @@ idPrefix = "ZEROTH OUTPUT: "
 helper :: Q [Dec] -> Location -> Q [Dec]
 helper splice loc = do
     decls <- splice
-    runIO $ do putStrLn $ idPrefix ++ show ((loc, pprint =<< decls), map (fromJust . nameModule) $ listify (isJust . nameModule) decls)
+    runIO $ do putStrLn $ idPrefix ++ show ((loc, unlines $ pprint <$> decls), map (fromJust . nameModule) $ listify (isJust . nameModule) decls)
                hFlush stdout
     return decls

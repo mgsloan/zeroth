@@ -4,15 +4,14 @@ module Language.Haskell.TH.ZeroTH
 
 import Language.Haskell.Exts hiding ( comments )
 import System.Process        ( runInteractiveProcess, waitForProcess )
-import System.Info           ( os )
-import System.IO             ( hPutStr, hClose, hGetContents, openTempFile, stdin )
+import System.IO             ( hPutStr, hClose, hGetContents, openTempFile, stdin, stdout )
 import System.Directory      ( removeFile, getTemporaryDirectory )
 import System.Exit           ( ExitCode (..) )
-import Control.Applicative   ( (<$>) )
+import Control.Applicative   ( (<$>), (<*>) )
 import Control.Monad         ( guard, when )
 import Data.Generics.Aliases ( mkT )
 import Data.Generics.Schemes ( everywhere, listify )
-import Data.List             ( (\\), intersperse, isInfixOf, isPrefixOf, nub, stripPrefix )
+import Data.List             ( (\\), delete, intersperse, isInfixOf, isPrefixOf, nub, stripPrefix )
 import Data.Maybe            ( catMaybes, fromMaybe, mapMaybe )
 
 import Language.Haskell.TH.ZeroTH.Config   ( Config(..) )
@@ -24,8 +23,12 @@ readFromFile :: FilePath -> IO String
 readFromFile "-"  = hGetContents stdin
 readFromFile path = readFile path
 
-zeroTH :: Config -> IO String
-zeroTH = (prettyPrintAll <$>) . zeroTHInternal
+writeToFile :: FilePath -> String -> IO ()
+writeToFile "-" d = hPutStr stdout d
+writeToFile path d = writeFile path d
+
+zeroTH :: Config -> IO ()
+zeroTH = (=<<) . writeToFile . outputFile <*> (prettyPrintAll <$>) . zeroTHInternal
 
 data ZeroTHOutput
     = ZeroTHOutput { originalSource :: String
@@ -49,7 +52,7 @@ zeroTHInternal c
                                           else return input
          (thData, qualImports) <- case parseModule thInput of
                                      ParseOk m -> unzip <$> runTH (ghcPath c) ((if wholeFile c then id else onlySplices) m) (ghcArgs c)
-                                     e -> error $ show e
+                                     e -> error $ show e ++ '\n' : thInput
          let reattach :: [Decl] -> [Decl]
              reattach (SpliceDecl sLoc _ : t) = (parseDecls . fromMaybe err $ lookup (location sLoc) thData) ++ t
                  where
@@ -59,7 +62,7 @@ zeroTHInternal c
                            ParseOk (Module loc m pragmas mWarn exports im decls)
                              -> return (Module loc m pragmas mWarn exports (postProcessImports (dropImport c) im $ concat qualImports)
                                         (everywhere (mkT reattach) decls))
-                           e -> error $ show e
+                           e -> error $ show e ++ '\n' : zerothInput
          when (inputFile c == "-") $ removeFile inputFile2
          return $ ZeroTHOutput { originalSource = input
                                , combinedOutput = combinedData
@@ -67,7 +70,7 @@ zeroTHInternal c
                                }
     where parseDecls s = case parseModule s of
                            ParseOk (Module _ _ _ _ _ _ decls) -> decls
-                           e -> error $ show e
+                           e -> error $ show e ++ '\n' : s
           onlySplices (Module loc m pragmas mWarn exports im decls) = Module loc m pragmas mWarn exports im $ listify isSplice decls
           isSplice (SpliceDecl _ _) = True
           isSplice _ = False
@@ -186,8 +189,7 @@ runTH ghc (Module _ _ pragmas _ _ imports decls) ghcOpts
              check _         = error $ "Failed to parse result:\n" ++ output
          case eCode of
            ExitFailure err -> error (unwords (ghc:args) ++ ": failure: " ++ show err ++ ":\n" ++ errMsg)
-           ExitSuccess | not (null errMsg) -> error (unwords (ghc:args) ++ ": failure:\n" ++ errMsg)
-                       | otherwise -> return . mapMaybe (fmap (check . reads) . stripPrefix idPrefix) $ lines output
+           ExitSuccess -> return . mapMaybe (fmap (check . reads) . stripPrefix idPrefix) $ lines output
     where pp :: (Pretty a) => a -> String
           pp = prettyPrintWithMode (defaultMode{layout = PPInLine})
           realM = unlines $ (pp . disableWarnings <$> pragmas)
@@ -207,13 +209,11 @@ runTH ghc (Module _ _ pragmas _ _ imports decls) ghcOpts
           editSplice x = x
           spliceToExp (ParenSplice e) = e
           spliceToExp _ = error "TH: FIXME!"
-          nullFile
-              | "mingw" `isPrefixOf` os = "NUL:"
-              | otherwise               = "/dev/null"
-          extraOpts = ["-w", "-package", "base", "-package", "zeroth", "-o", nullFile, "-ohi", nullFile, "-fno-code"]
+          extraOpts = ["-w"]
           extraOpts' = (' ' :) =<< extraOpts
           disableWarnings (OptionsPragma loc Nothing    s) = OptionsPragma loc Nothing $ s ++ extraOpts' -- Turn off all warnings (works for GHC)
           disableWarnings (OptionsPragma loc (Just GHC) s) = OptionsPragma loc (Just GHC) $ s ++ extraOpts'
+          disableWarnings (LanguagePragma loc xs) = LanguagePragma loc $ delete (Ident "CPP") xs
           disableWarnings x = x
 
 emptySrcLoc :: SrcLoc
