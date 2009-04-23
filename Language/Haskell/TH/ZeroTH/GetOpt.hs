@@ -33,7 +33,7 @@ mkConfig :: TempFlags -> IO Config
 mkConfig tmpFlags
     = do ghcPath'   <- getExecutable "ghc" . getLast $ tempGHCPath tmpFlags
          cpphsPath' <- getExecutable "cpphs" . getLast $ tempCpphsPath tmpFlags
-         return (Config
+         return Config
                  { ghcPath    = ghcPath'
                  , cpphsPath  = cpphsPath'
                  , inputFile  = fromMaybe "-" . getLast $ tempInputFile tmpFlags
@@ -41,7 +41,7 @@ mkConfig tmpFlags
                  , ghcArgs    = tempGHCArgs tmpFlags `orElse` defaultGhcArgs
                  , cpphsArgs  = tempCpphsArgs tmpFlags
                  , dropImport = tempDropImport tmpFlags `orElse` defaultDrop
-                 , wholeFile  = not . getAny $ tempJustSplices tmpFlags})
+                 , wholeFile  = not . getAny $ tempJustSplices tmpFlags}
     where
         defaultGhcArgs = ["-fno-code", "-o", nullFile, "-ohi", nullFile]
         nullFile

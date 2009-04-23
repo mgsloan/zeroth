@@ -4,7 +4,7 @@ module Language.Haskell.TH.ZeroTH
 
 import Language.Haskell.Exts hiding ( comments )
 import System.Process        ( runInteractiveProcess, waitForProcess )
-import System.IO             ( hPutStr, hClose, hGetContents, openTempFile, stdin, stdout )
+import System.IO             ( hClose, hGetContents, hPutStr, openTempFile )
 import System.Directory      ( removeFile, getTemporaryDirectory )
 import System.Exit           ( ExitCode (..) )
 import Control.Applicative   ( (<$>), (<*>) )
@@ -20,11 +20,11 @@ import Language.Haskell.TH.ZeroTH.Helper   ( idPrefix )
 import ListUtils                           ( replaceAll )
 
 readFromFile :: FilePath -> IO String
-readFromFile "-"  = hGetContents stdin
+readFromFile "-"  = getContents
 readFromFile path = readFile path
 
 writeToFile :: FilePath -> String -> IO ()
-writeToFile "-" d = hPutStr stdout d
+writeToFile "-" d = putStr d
 writeToFile path d = writeFile path d
 
 zeroTH :: Config -> IO ()
@@ -48,7 +48,7 @@ zeroTHInternal c
              shouldRunCpphs = "-cpp" `elem` ghcArgs c || " -cpp " `isInfixOf` firstLine || " CPP " `isInfixOf` firstLine 
          thInput     <- if shouldRunCpphs then preprocessCpphs (cpphsPath c) (["--noline","-DHASTH"]++cpphsArgs c) inputFile2
                                           else return input
-         zerothInput <- if shouldRunCpphs then preprocessCpphs (cpphsPath c) (["--noline"]++cpphsArgs c) inputFile2
+         zerothInput <- if shouldRunCpphs then preprocessCpphs (cpphsPath c) ("--noline" : cpphsArgs c) inputFile2
                                           else return input
          (thData, qualImports) <- case parseModule thInput of
                                      ParseOk m -> unzip <$> runTH (ghcPath c) ((if wholeFile c then id else onlySplices) m) (ghcArgs c)
@@ -64,10 +64,10 @@ zeroTHInternal c
                                         (everywhere (mkT reattach) decls))
                            e -> error $ show e ++ '\n' : zerothInput
          when (inputFile c == "-") $ removeFile inputFile2
-         return $ ZeroTHOutput { originalSource = input
-                               , combinedOutput = combinedData
-                               , thOutput = thData
-                               }
+         return ZeroTHOutput { originalSource = input
+                             , combinedOutput = combinedData
+                             , thOutput = thData
+                             }
     where parseDecls s = case parseModule s of
                            ParseOk (Module _ _ _ _ _ _ decls) -> decls
                            e -> error $ show e ++ '\n' : s
@@ -139,12 +139,12 @@ postProcessImports :: [String] -> [ImportDecl] -> [String] -> [ImportDecl]
 postProcessImports dropPrefixes oldImports qNames
     = nub $ removeTH
             ++ mapMaybe (\q -> do guard . not $ any (maybe False (\(ModuleName m) -> m == q) . importAs) removeTH
-                                  return $ ImportDecl { importLoc = emptySrcLoc
-                                                      , importModule = ModuleName q
-                                                      , importQualified = True
-                                                      , importSrc = False
-                                                      , importAs = Nothing
-                                                      , importSpecs = Nothing })
+                                  return ImportDecl { importLoc = emptySrcLoc
+                                                    , importModule = ModuleName q
+                                                    , importQualified = True
+                                                    , importSrc = False
+                                                    , importAs = Nothing
+                                                    , importSpecs = Nothing })
                         qNames
     where
         removeTH = filter (not . (\(ModuleName m) -> any (`isPrefixOf` m) dropPrefixes) . importModule) oldImports

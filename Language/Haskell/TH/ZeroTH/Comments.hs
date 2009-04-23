@@ -5,7 +5,7 @@ type Location = (Int, Int)
 type Comment = (Location,String)
 
 mixComments :: [Comment] -> [(Location,String)] -> [String]
-mixComments c [] = map (showComment.lines) (map snd c)
+mixComments c [] = map (showComment.lines.snd) c
 mixComments [] i = map snd i
 mixComments c@(((cl, _),cc):cs) i@(((il, _),ic):is)
     | cl <= il = showComment (lines cc):mixComments cs i
