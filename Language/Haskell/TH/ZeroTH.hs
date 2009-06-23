@@ -2,13 +2,14 @@ module Language.Haskell.TH.ZeroTH
     ( prettyPrintAll, zeroTH, zeroTHInternal
     ) where
 
-import Language.Haskell.Exts hiding ( comments )
+import Language.Haskell.Exts
 import System.Process        ( runInteractiveProcess, waitForProcess )
-import System.IO             ( hClose, hGetContents, hPutStr, openTempFile )
+import System.IO             ( hClose, hGetContents, hPutStr, hPutStrLn, openTempFile, stderr )
 import System.Directory      ( removeFile, getTemporaryDirectory )
 import System.Exit           ( ExitCode (..) )
 import Control.Applicative   ( (<$>), (<*>) )
 import Control.Monad         ( guard, when )
+import Data.Foldable         ( fold )
 import Data.Generics.Aliases ( mkT )
 import Data.Generics.Schemes ( everywhere, listify )
 import Data.List             ( (\\), delete, intersperse, isInfixOf, isPrefixOf, nub, stripPrefix )
@@ -44,13 +45,15 @@ zeroTHInternal c
                                        "-" -> openTempFile tmpDir "TH.cpphs.zeroth"
                                        _   -> return (inputFile c, undefined)
          when (inputFile c == "-") $ hPutStr tmpHandle input >> hClose tmpHandle
+         let exts = readExtensions input
+         hPutStrLn stderr $ "extensions: " ++ show exts
          let firstLine      = head $ lines input
-             shouldRunCpphs = "-cpp" `elem` ghcArgs c || " -cpp " `isInfixOf` firstLine || " CPP " `isInfixOf` firstLine 
+             shouldRunCpphs = "-cpp" `elem` ghcArgs c || " -cpp " `isInfixOf` firstLine || CPP `elem` (fold exts)
          thInput     <- if shouldRunCpphs then preprocessCpphs (cpphsPath c) (["--noline","-DHASTH"]++cpphsArgs c) inputFile2
                                           else return input
          zerothInput <- if shouldRunCpphs then preprocessCpphs (cpphsPath c) ("--noline" : cpphsArgs c) inputFile2
                                           else return input
-         (thData, qualImports) <- case parseModule thInput of
+         (thData, qualImports) <- case parseFileContents thInput of
                                      ParseOk m -> unzip <$> runTH (ghcPath c) ((if wholeFile c then id else onlySplices) m) (ghcArgs c)
                                      e -> error $ show e ++ '\n' : thInput
          let reattach :: [Decl] -> [Decl]
@@ -58,7 +61,7 @@ zeroTHInternal c
                  where
                      err = error $ "Could not find splice at " ++ show (location sLoc) ++ " in " ++ show thData
              reattach x                       = x
-         combinedData <- case parseModule zerothInput of
+         combinedData <- case parseFileContents zerothInput of
                            ParseOk (Module loc m pragmas mWarn exports im decls)
                              -> return (Module loc m pragmas mWarn exports (postProcessImports (dropImport c) im $ concat qualImports)
                                         (everywhere (mkT reattach) decls))
@@ -68,7 +71,7 @@ zeroTHInternal c
                              , combinedOutput = combinedData
                              , thOutput = thData
                              }
-    where parseDecls s = case parseModule s of
+    where parseDecls s = case parseFileContents s of
                            ParseOk (Module _ _ _ _ _ _ decls) -> decls
                            e -> error $ show e ++ '\n' : s
           onlySplices (Module loc m pragmas mWarn exports im decls) = Module loc m pragmas mWarn exports im $ listify isSplice decls
@@ -116,7 +119,6 @@ numberAndPrettyPrint (Module mLoc m prags mbWarn exports imp decls)
           nAndPDec d@(SpecSig loc _ _) = [(location loc, prettyPrint d)]
           nAndPDec d@(TypeFamDecl loc _ _ _) = [(location loc, prettyPrint d)]
           nAndPDec d@(TypeInsDecl loc _ _) = [(location loc, prettyPrint d)]
-          nAndPDec d@(UnknownDeclPragma loc _ _) = [(location loc, prettyPrint d)]
           nAndPDec d@(WarnPragmaDecl loc _) = [(location loc, prettyPrint d)]
           nAndPPrag (LanguagePragma loc names)
               | null filteredNames = []
@@ -126,7 +128,6 @@ numberAndPrettyPrint (Module mLoc m prags mbWarn exports imp decls)
           nAndPPrag p@(IncludePragma loc _) = [(location loc, prettyPrint p)]
           nAndPPrag p@(CFilesPragma loc _) = [(location loc, prettyPrint p)]
           nAndPPrag (OptionsPragma loc mt s) = [(location loc, prettyPrint . OptionsPragma loc mt $ filterOptions s)]
-          nAndPPrag p@(UnknownTopPragma loc _ _) = [(location loc, prettyPrint p)]
           filterOptions optStr = foldr (\opt -> replaceAll (" -" ++ opt ++ " ") " ") optStr $ "cpp" : "fth" : (('X' :) <$> unwantedLanguageOptions)
           unwantedLanguageOptions = ["CPP", "TemplateHaskell"]
 
@@ -144,6 +145,7 @@ postProcessImports dropPrefixes oldImports qNames
                                                     , importQualified = True
                                                     , importSrc = False
                                                     , importAs = Nothing
+                                                    , importPkg = Nothing
                                                     , importSpecs = Nothing })
                         qNames
     where
