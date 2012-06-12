@@ -1,6 +1,6 @@
 Name:          zeroth
 Version:       2009.6.23.3
-Cabal-version: >= 1.6
+Cabal-version: >= 1.8
 License:       BSD3
 License-file:  LICENSE
 Maintainer:    Robin Green <greenrd@greenrd.org>
@@ -19,21 +19,39 @@ Stability:     experimental
 Tested-with:   GHC == 6.10.3
 Extra-tmp-files: ppsrc/Language/Haskell/TH/ZeroTH/GetOpt.hs
 Extra-source-files: Language/Haskell/TH/ZeroTH/GetOpt.hs
-
 Source-repository head
     Type:      darcs
     Location:  http://patch-tag.com/publicrepos/zerothDarcs2
 
 Library
-    Build-depends:   base >= 4, base < 5, haskell-src-exts >= 1.0.0, directory, process, syb, template-haskell, hskeleton >= 0.1, hskeleton < 0.2, derive, monoid-record >= 0.1, monoid-record < 0.2, Cabal >= 1.6, Cabal < 1.7, filepath
-    Exposed-modules: Language.Haskell.TH.ZeroTH.Config, Language.Haskell.TH.ZeroTH.GetOpt, Language.Haskell.TH.ZeroTH, Language.Haskell.TH.ZeroTH.Helper, Language.Haskell.TH.ZeroTH.Comments, Distribution.ZeroTH
+    Build-depends:   base >= 4 && < 5,
+                     haskell-src-exts >= 1.11,
+                     directory, 
+                     process, 
+                     syb,
+                     template-haskell,
+                     hskeleton >= 0.1,
+                     hskeleton < 0.2,
+                     derive, 
+                     monoid-record >= 0.1 && < 0.2,
+                     Cabal,
+                     --Cabal >= 1.6, Cabal < 1.7,
+                     filepath
+    Exposed-modules: Language.Haskell.TH.ZeroTH.Config,
+                     Language.Haskell.TH.ZeroTH.GetOpt, 
+                     Language.Haskell.TH.ZeroTH,
+                     Language.Haskell.TH.ZeroTH.Helper,
+                     Language.Haskell.TH.ZeroTH.Comments,
+                     Distribution.ZeroTH
     Other-modules:   ListUtils
     GHC-options:     -Wall
-    Hs-source-dirs:  ppsrc, .
+    Hs-source-dirs:  src
 
 Executable zeroth
-    Build-depends:   base >= 4, base < 5, haskell-src-exts >= 1.0.0, directory, process, syb, template-haskell, hskeleton >= 0.1, hskeleton < 0.2, derive, monoid-record >= 0.1, monoid-record < 0.2, Cabal >= 1.6, Cabal < 1.7, filepath
     Main-is:         Main.hs
-    Other-modules:   Language.Haskell.TH.ZeroTH.Comments, ListUtils, Language.Haskell.TH.ZeroTH.Config, Language.Haskell.TH.ZeroTH.GetOpt, Language.Haskell.TH.ZeroTH, Language.Haskell.TH.ZeroTH.Helper, Distribution.ZeroTH
+    Build-depends:   base >= 4, base < 5,
+                     syb, 
+                     template-haskell,
+                     zeroth
     GHC-options:     -Wall
-    Hs-source-dirs:  ppsrc, .
+    Hs-source-dirs:  .

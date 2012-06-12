@@ -125,8 +125,6 @@ numberAndPrettyPrint (Module mLoc m prags mbWarn exports imp decls)
               | otherwise          = [(location loc, prettyPrint $ LanguagePragma loc filteredNames)]
               where
                   filteredNames = names \\ (Ident <$> unwantedLanguageOptions)
-          nAndPPrag p@(IncludePragma loc _) = [(location loc, prettyPrint p)]
-          nAndPPrag p@(CFilesPragma loc _) = [(location loc, prettyPrint p)]
           nAndPPrag (OptionsPragma loc mt s) = [(location loc, prettyPrint . OptionsPragma loc mt $ filterOptions s)]
           filterOptions optStr = foldr (\opt -> replaceAll (" -" ++ opt ++ " ") " ") optStr $ "cpp" : "fth" : (('X' :) <$> unwantedLanguageOptions)
           unwantedLanguageOptions = ["CPP", "TemplateHaskell"]
@@ -203,14 +201,11 @@ runTH ghc (Module _ _ pragmas _ _ imports decls) ghcOpts
           editSplice :: Decl -> Decl
           editSplice (SpliceDecl loc splice)
               = SpliceDecl loc
-                  . ParenSplice
                   . App (App (Var . Qual (ModuleName helperModule) $ Ident "helper")
-                             (Paren $ spliceToExp splice))
+                             (Paren splice))
                   . Tuple
                   $ Lit . Int . fromIntegral <$> [ srcLine loc, srcColumn loc ]
           editSplice x = x
-          spliceToExp (ParenSplice e) = e
-          spliceToExp _ = error "TH: FIXME!"
           extraOpts = ["-w"]
           extraOpts' = (' ' :) =<< extraOpts
           disableWarnings (OptionsPragma loc Nothing    s) = OptionsPragma loc Nothing $ s ++ extraOpts' -- Turn off all warnings (works for GHC)
