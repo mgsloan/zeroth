@@ -34,7 +34,8 @@ Library
                      derive, 
                      monoid-record >= 0.1 && < 0.2,
                      Cabal,
-                     filepath
+                     filepath,
+                     containers
     Exposed-modules: Language.Haskell.TH.ZeroTH.Config,
                      Language.Haskell.TH.ZeroTH.GetOpt, 
                      Language.Haskell.TH.ZeroTH,
