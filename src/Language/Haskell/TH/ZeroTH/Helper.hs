@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE PatternGuards #-}
 module Language.Haskell.TH.ZeroTH.Helper ( helper, idPrefix ) where
 
@@ -42,7 +43,11 @@ topLevelBindrs x = case x of
     FamilyD _ n _ _     -> [n]
     DataInstD _ n _ _ _ -> [n]
     NewtypeInstD _ n _ _ _ -> [n]
+#if MIN_VERSION_template_haskell(2,9,0)
+    TySynInstD n _      -> [n]
+#else
     TySynInstD n _ _    -> [n]
+#endif
     PragmaD (InlineP n _ _ _)       -> [n]
     PragmaD (SpecialiseP n _ _ _)   -> [n]
     InstanceD {}    -> []

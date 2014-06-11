@@ -2,7 +2,7 @@ module Language.Haskell.TH.ZeroTH
     ( prettyPrintAll, zeroTH, zeroTHInternal
     ) where
 
-import Language.Haskell.Exts
+import Language.Haskell.Exts hiding (loc)
 import System.Process        ( runInteractiveProcess, waitForProcess )
 import System.IO             ( hClose, hGetContents, hPutStr, hPutStrLn, openTempFile, stderr )
 import System.Directory      ( removeFile, getTemporaryDirectory )
@@ -96,7 +96,8 @@ numberAndPrettyPrint (Module mLoc m prags mbWarn exports imp decls)
                                              ]
                                  ++ [" where"])
          : (((\i -> (location (importLoc i), prettyPrint i)) <$> imp) ++ (nAndPDec =<< decls))
-    where nAndPDec d@(TypeDecl loc _ _ _) = [(location loc, prettyPrint d)]
+    where -- XXX this could be  nAndPDec x = [(ann x, prettyPrint x)]
+          nAndPDec d@(TypeDecl loc _ _ _) = [(location loc, prettyPrint d)]
           nAndPDec d@(DataDecl loc _ _ _ _ _ _) = [(location loc, prettyPrint d)]
           nAndPDec d@(GDataDecl loc _ _ _ _ _ _ _) = [(location loc, prettyPrint d)]
           nAndPDec d@(InfixDecl loc _ _ _) = [(location loc, prettyPrint d)]
@@ -122,12 +123,15 @@ numberAndPrettyPrint (Module mLoc m prags mbWarn exports imp decls)
           nAndPDec d@(TypeFamDecl loc _ _ _) = [(location loc, prettyPrint d)]
           nAndPDec d@(TypeInsDecl loc _ _) = [(location loc, prettyPrint d)]
           nAndPDec d@(WarnPragmaDecl loc _) = [(location loc, prettyPrint d)]
+          nAndPDec d@(AnnPragma loc _) = [(location loc, prettyPrint d)]
+          nAndPDec d@(InlineConlikeSig loc _ _) = [(location loc, prettyPrint d)]
           nAndPPrag (LanguagePragma loc names)
               | null filteredNames = []
               | otherwise          = [(location loc, prettyPrint $ LanguagePragma loc filteredNames)]
               where
                   filteredNames = names \\ (Ident <$> unwantedLanguageOptions)
           nAndPPrag (OptionsPragma loc mt s) = [(location loc, prettyPrint . OptionsPragma loc mt $ filterOptions s)]
+          -- (AnnModulePragma loc _) ??
           filterOptions optStr = foldr (\opt -> replaceAll (" -" ++ opt ++ " ") " ") optStr $ "cpp" : "fth" : (('X' :) <$> unwantedLanguageOptions)
           unwantedLanguageOptions = ["CPP", "TemplateHaskell"]
 
