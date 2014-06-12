@@ -16,9 +16,7 @@ Description:   TemplateHaskell is fairly useful for generating new
                the resulting code.
 Bug-reports:   mailto:greenrd@greenrd.org
 Stability:     experimental
-Tested-with:   GHC == 6.10.3
-Extra-tmp-files: ppsrc/Language/Haskell/TH/ZeroTH/GetOpt.hs
-Extra-source-files: Language/Haskell/TH/ZeroTH/GetOpt.hs
+Tested-with:   GHC == 7.6.2, GHC==7.8.2
 Source-repository head
     Type:      darcs
     Location:  http://patch-tag.com/publicrepos/zerothDarcs2

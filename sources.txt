@@ -1,0 +1,2 @@
+./
+darcs:http://code.haskell.org/~aavogt/hskeleton_ghc78_fix
