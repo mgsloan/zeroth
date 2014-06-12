@@ -2,7 +2,7 @@ module Language.Haskell.TH.ZeroTH
     ( prettyPrintAll, zeroTH, zeroTHInternal
     ) where
 
-import Language.Haskell.Exts
+import Language.Haskell.Exts hiding (loc)
 import System.Process        ( runInteractiveProcess, waitForProcess )
 import System.IO             ( hClose, hGetContents, hPutStr, hPutStrLn, openTempFile, stderr )
 import System.Directory      ( removeFile, getTemporaryDirectory )
@@ -46,9 +46,11 @@ zeroTHInternal c
                                        _   -> return (inputFile c, undefined)
          when (inputFile c == "-") $ hPutStr tmpHandle input >> hClose tmpHandle
          let exts = readExtensions input
+             hasCPP = not $ null [ () | Just (_, exts') <- [exts],
+                                    EnableExtension CPP <- exts' ]
          hPutStrLn stderr $ "extensions: " ++ show exts
          let firstLine      = head $ lines input
-             shouldRunCpphs = "-cpp" `elem` ghcArgs c || " -cpp " `isInfixOf` firstLine || CPP `elem` (fold exts)
+             shouldRunCpphs = "-cpp" `elem` ghcArgs c || " -cpp " `isInfixOf` firstLine || hasCPP 
          thInput     <- if shouldRunCpphs then preprocessCpphs (cpphsPath c) (["--noline","-DHASTH"]++cpphsArgs c) inputFile2
                                           else return input
          zerothInput <- if shouldRunCpphs then preprocessCpphs (cpphsPath c) ("--noline" : cpphsArgs c) inputFile2
@@ -94,7 +96,8 @@ numberAndPrettyPrint (Module mLoc m prags mbWarn exports imp decls)
                                              ]
                                  ++ [" where"])
          : (((\i -> (location (importLoc i), prettyPrint i)) <$> imp) ++ (nAndPDec =<< decls))
-    where nAndPDec d@(TypeDecl loc _ _ _) = [(location loc, prettyPrint d)]
+    where -- XXX this could be  nAndPDec x = [(ann x, prettyPrint x)]
+          nAndPDec d@(TypeDecl loc _ _ _) = [(location loc, prettyPrint d)]
           nAndPDec d@(DataDecl loc _ _ _ _ _ _) = [(location loc, prettyPrint d)]
           nAndPDec d@(GDataDecl loc _ _ _ _ _ _ _) = [(location loc, prettyPrint d)]
           nAndPDec d@(InfixDecl loc _ _ _) = [(location loc, prettyPrint d)]
@@ -116,16 +119,19 @@ numberAndPrettyPrint (Module mLoc m prags mbWarn exports imp decls)
           nAndPDec d@(InstSig loc _ _ _) = [(location loc, prettyPrint d)]
           nAndPDec d@(RulePragmaDecl loc _) = [(location loc, prettyPrint d)]
           nAndPDec d@(SpecInlineSig loc _ _ _ _) = [(location loc, prettyPrint d)]
-          nAndPDec d@(SpecSig loc _ _) = [(location loc, prettyPrint d)]
+          nAndPDec d@(SpecSig loc _ _ _) = [(location loc, prettyPrint d)]
           nAndPDec d@(TypeFamDecl loc _ _ _) = [(location loc, prettyPrint d)]
           nAndPDec d@(TypeInsDecl loc _ _) = [(location loc, prettyPrint d)]
           nAndPDec d@(WarnPragmaDecl loc _) = [(location loc, prettyPrint d)]
+          nAndPDec d@(AnnPragma loc _) = [(location loc, prettyPrint d)]
+          nAndPDec d@(InlineConlikeSig loc _ _) = [(location loc, prettyPrint d)]
           nAndPPrag (LanguagePragma loc names)
               | null filteredNames = []
               | otherwise          = [(location loc, prettyPrint $ LanguagePragma loc filteredNames)]
               where
                   filteredNames = names \\ (Ident <$> unwantedLanguageOptions)
           nAndPPrag (OptionsPragma loc mt s) = [(location loc, prettyPrint . OptionsPragma loc mt $ filterOptions s)]
+          -- (AnnModulePragma loc _) ??
           filterOptions optStr = foldr (\opt -> replaceAll (" -" ++ opt ++ " ") " ") optStr $ "cpp" : "fth" : (('X' :) <$> unwantedLanguageOptions)
           unwantedLanguageOptions = ["CPP", "TemplateHaskell"]
 
@@ -173,12 +179,12 @@ runTH ghc (Module _ _ pragmas _ _ imports decls) ghcOpts
          hPutStr tmpInHandle realM
          hClose tmpInHandle
          let args = [tmpInPath]++ghcOpts++extraOpts
-         --putStrLn $ "Module:\n" ++ realM
-         --putStrLn $ "Running: " ++ unwords (ghc:args)
+         putStrLn $ "Module:\n" ++ realM
+         putStrLn $ "Running: " ++ unwords (ghc:args)
          (inH,outH,errH,pid) <- runInteractiveProcess ghc args Nothing Nothing
          hClose inH
          output <- hGetContents outH
-         --putStrLn $ "TH Data:\n" ++ output
+         putStrLn $ "TH Data:\n" ++ output
          length output `seq` hClose outH
          errMsg <- hGetContents errH
          length errMsg `seq` hClose errH
@@ -203,7 +209,7 @@ runTH ghc (Module _ _ pragmas _ _ imports decls) ghcOpts
               = SpliceDecl loc
                   . App (App (Var . Qual (ModuleName helperModule) $ Ident "helper")
                              (Paren splice))
-                  . Tuple
+                  . Tuple Boxed
                   $ Lit . Int . fromIntegral <$> [ srcLine loc, srcColumn loc ]
           editSplice x = x
           extraOpts = ["-w"]

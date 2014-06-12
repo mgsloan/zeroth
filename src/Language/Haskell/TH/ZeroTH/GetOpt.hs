@@ -43,7 +43,7 @@ mkConfig tmpFlags
                  , dropImport = tempDropImport tmpFlags `orElse` defaultDrop
                  , wholeFile  = not . getAny $ tempJustSplices tmpFlags}
     where
-        defaultGhcArgs = ["-fno-code", "-o", nullFile, "-ohi", nullFile]
+        defaultGhcArgs = ["-fno-code"] --  "-o", nullFile, "-ohi", nullFile]
         nullFile
             | "mingw" `isPrefixOf` os = "NUL:"
             | otherwise               = "/dev/null"
